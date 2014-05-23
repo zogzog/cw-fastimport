@@ -1,0 +1,21 @@
+Source: cubicweb-fastimport
+Section: web
+Priority: optional
+Maintainer: LOGILAB S.A. (Paris, FRANCE) <contact@logilab.fr>
+Build-Depends: debhelper (>= 7), python (>= 2.6), python-support
+Standards-Version: 3.9.3
+XS-Python-Version: >= 2.6
+
+Package: cubicweb-fastimport
+Architecture: all
+Depends:
+ cubicweb-common (>= 3.17.15),
+ ${python:Depends},
+ ${misc:Depends},
+Description: Faster-than-baseline entities and relation insertions
+ CubicWeb is a semantic web application framework.
+ .
+ Faster-than-baseline entities and relation insertions
+ .
+ This package will install all the components you need to run the
+ cubicweb-fastimport application (cube :)..
