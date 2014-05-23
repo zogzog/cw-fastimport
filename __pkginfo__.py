@@ -13,7 +13,8 @@ author_email = 'contact@logilab.fr'
 description = 'Faster-than-baseline entities and relation insertions'
 web = 'http://www.cubicweb.org/project/%s' % distname
 
-__depends__ =  {'cubicweb': '>= 3.17.15'}
+__depends__ =  {'cubicweb': '>= 3.17.15',
+                'cubicweb-worker': '3.0.0'}
 __recommends__ = {}
 
 classifiers = [
