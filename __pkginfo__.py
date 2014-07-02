@@ -14,7 +14,8 @@ description = 'Faster-than-baseline entities and relation insertions'
 web = 'http://www.cubicweb.org/project/%s' % distname
 
 __depends__ =  {'cubicweb': '>= 3.17.15',
-                'cubicweb-worker': '3.0.0'}
+                'cubicweb-worker': '3.0.0',
+                'numpy': None}
 __recommends__ = {}
 
 classifiers = [
