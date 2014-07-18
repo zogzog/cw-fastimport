@@ -35,7 +35,7 @@ from cubicweb.hooks.integrity import DONT_CHECK_RTYPES_ON_ADD
 from cubicweb.view import EntityAdapter
 
 from cubes.fastimport.hooks import HooksRunner
-
+from cubes.fastimport import utils # monkeypatch the native source
 
 YAMS_TO_PY_TYPEMAP = defaultdict(
     lambda : lambda x:x,
