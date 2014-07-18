@@ -124,6 +124,15 @@ def _update_entity_rel_cache_add(session, entity, rtype, role, targetentity, oth
 class FlushController(object):
     hooksrunnerclass = HooksRunner
     loggername = 'cubicweb'
+    # vectorized hooks are open-coded within the hooks runner
+    vectorized_entity_hooks = ('checkcard_after_add_entity',
+                               'setowner',
+                               'metaattrsinit',
+                               'checkattrconstraint',)
+    deferred_entity_hooks = ('supervising',)
+    vectorized_relation_hooks = ('checkconstraint',)
+    deferred_relation_hooks = ('updateftirel',
+                               'notifyrelationchange')
 
     def __init__(self, session, schema, disabled_regids,
                  deferred_entity_hooks=(),
@@ -134,8 +143,13 @@ class FlushController(object):
         self.hooksrunner = self.hooksrunnerclass(self.logger,
                                                  session,
                                                  disabled_regids,
-                                                 deferred_entity_hooks,
-                                                 deferred_relation_hooks)
+                                                 (deferred_entity_hooks +
+                                                  self.vectorized_entity_hooks +
+                                                  self.deferred_entity_hooks),
+                                                 (deferred_relation_hooks +
+                                                  self.vectorized_relation_hooks +
+                                                  self.deferred_relation_hooks))
+
 
     def insert_relations(self, rtype, fromto):
         session = self.session

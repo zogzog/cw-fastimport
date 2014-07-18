@@ -37,12 +37,64 @@ uncomment code below if you want to activate automatic test for your cube:
             return ('some', 'startup', 'views')
 """
 
+import os.path as osp
+import csv
+from functools import partial
+
 from cubicweb.devtools import testlib
+from cubes.fastimport.entities import FlushController as FC
 
 class DefaultTC(testlib.CubicWebTC):
-    def test_something(self):
-        self.skipTest('this cube has no test')
 
+    def test_an_import(self):
+        controller = FC(self.session, self.schema, ())
+
+        cwgroups = []
+        group_by_name = {}
+        with open(osp.join(self.datadir, 'cwgroups.csv'), 'rb') as groupsfile:
+            reader = csv.DictReader(groupsfile)
+            for item in reader:
+                cwgroups.append((item,))
+
+        def newgroup_callback(entity, *args):
+            group_by_name[entity.name] = entity
+        controller.insert_entities('CWGroup', cwgroups, newgroup_callback)
+
+        cwusers = []
+        in_group = []
+        with open(osp.join(self.datadir, 'cwusers.csv'), 'rb') as usersfile:
+            reader = csv.DictReader(usersfile)
+            for item in reader:
+                item = dict((k, v.decode('utf-8'))
+                            for k, v in item.iteritems())
+                for name in item.pop('groups', '').split(','):
+                    in_group.append((item['login'], name))
+                cwusers.append((item,))
+
+        user_by_login = {}
+        def newcwuser_callback(entity, *args):
+            user_by_login[entity.login] = entity
+        controller.insert_entities('CWUser', cwusers, newcwuser_callback)
+
+        getgroup = partial(self.session.execute, 'CWGroup G WHERE G name %(n)s')
+        controller.insert_relations('in_group',
+                                    [(user_by_login[login],
+                                      group_by_name.get(name, getgroup({'n':name}).get_entity(0,0)))
+                                     for login, name in in_group])
+        self.commit()
+
+        self.assertEqual([[u'anon', u'guests'],
+                          [u'admin', u'managers'],
+                          [u'auc', u'users'],
+                          [u'dtomanos', u'users'],
+                          [u'gadelmaleh', u'users'],
+                          [u'bedos', u'users'],
+                          [u'auc', u'staff'],
+                          [u'dtomanos', u'staff'],
+                          [u'gadelmaleh', u'humorists'],
+                          [u'bedos', u'humorists']],
+                         self.session.execute('Any UN,GN WHERE U in_group G, '
+                                              'U login UN, G name GN').rows)
 
 if __name__ == '__main__':
     from logilab.common.testlib import unittest_main
