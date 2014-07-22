@@ -19,6 +19,7 @@
 
 from collections import defaultdict
 
+from cubicweb import server
 from cubicweb.server.hook import (ENTITIES_HOOKS as ENTITIES_EVENTS,
                                   RELATIONS_HOOKS as RELATIONS_EVENTS)
 
@@ -224,14 +225,14 @@ class HooksRunner(object):
     def call_rtype_hooks(self, event, rtype, relations):
         event = event + '_relation'
         assert event in RELATIONS_EVENTS
-        shown = False
+        shown = not server.DEBUG & server.DBG_HOOKS
         self.logger.info('call rtypes hooks %s', event)
         with self.session.security_enabled(read=False):
             for relation in relations:
                 hooks = list(self.iterrelationhooks(event, rtype, relation))
                 if not shown and hooks:
-                    self.logger.info(' hooks: %s', [(hook.category, hook.__regid__)
-                                                    for hook in hooks])
+                    print ' hooks: ', [(hook.category, hook.__regid__)
+                                       for hook in hooks]
                     shown = True
                 if not hooks:
                     continue
@@ -245,13 +246,13 @@ class HooksRunner(object):
             eevent = event + '_entity'
             assert eevent in ENTITIES_EVENTS
             self.logger.info('call entity hooks %s', eevent)
-            shown = False
+            shown = not server.DEBUG & server.DBG_HOOKS
             for entity in entities:
                 assert entity.cw_etype == etype
                 hooks = list(self.iterentityhooks(eevent, entity))
                 if not shown and hooks:
-                    self.logger.info(' hooks: %s', [(hook.category, hook.__regid__)
-                                                    for hook in hooks])
+                    print ' hooks: ', [(hook.category, hook.__regid__)
+                                       for hook in hooks]
                     shown = True
                 if not hooks:
                     continue
@@ -263,13 +264,13 @@ class HooksRunner(object):
             assert revent in RELATIONS_EVENTS
             self.logger.info('call inlined relations hooks %s', revent)
             for rtype in inlinedrtypes:
-                shown = False
+                shown = not server.DEBUG & server.DBG_HOOKS
                 for entity in entities:
                     hooks = list(self.iterentityrelationhooks(revent, entity, rtype))
                     if not shown and hooks:
-                        self.logger.info(' %s hooks: %s', rtype,
-                                         [(hook.category, hook.__regid__)
-                                          for hook in hooks])
+                        print ' %s hooks: %s' % (rtype,
+                                                 [(hook.category, hook.__regid__)
+                                                  for hook in hooks])
                         shown = True
                     if not hooks:
                         continue
@@ -284,4 +285,5 @@ class HooksRunner(object):
                 key = key_data('__pseudo_entity_fti__', event)
                 for entity in entities:
                     self.deferred_entity_hooks[key][entity.cw_etype].append(entity)
-                self.logger.info('%s: preparing %s entities for fti', etype, len(entities))
+                if server.DEBUG & server.DBG_HOOKS:
+                    print '%s: preparing %s entities for fti' % (etype, len(entities))

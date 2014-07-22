@@ -49,6 +49,7 @@ class DefaultTC(testlib.CubicWebTC):
     def test_an_import(self):
         controller = FC(self.session, self.schema, ())
 
+        # collect & insert groups
         cwgroups = []
         group_by_name = {}
         with open(osp.join(self.datadir, 'cwgroups.csv'), 'rb') as groupsfile:
@@ -60,41 +61,74 @@ class DefaultTC(testlib.CubicWebTC):
             group_by_name[entity.name] = entity
         controller.insert_entities('CWGroup', cwgroups, newgroup_callback)
 
+        # collect cwuser data, prepare emails and group relations
         cwusers = []
         in_group = []
+        emails_by_address= {}
         with open(osp.join(self.datadir, 'cwusers.csv'), 'rb') as usersfile:
             reader = csv.DictReader(usersfile)
-            for item in reader:
+            for idx, item in enumerate(reader):
                 item = dict((k, v.decode('utf-8'))
                             for k, v in item.iteritems())
                 for name in item.pop('groups', '').split(','):
                     in_group.append((item['login'], name))
-                cwusers.append((item,))
+                email = item.pop('email')
+                if email: # my_email is an inlined relation -> in a cwuser column
+                    emails_by_address[email] = ({'address': email}, item['login'])
+                item['my_email'] = None
+                cwusers.append((item, email))
 
+        # insert emails
+        def newemail_callback(entity, *args):
+            # remap address -> eid
+            emails_by_address[entity.address] = entity.eid # address -> eid
+        emails = controller.insert_entities('EmailAddress', emails_by_address.values(), newemail_callback)
+        # now, resolve these 'my_email' relations for which
+        # we've got a value
+        for cwuser, emailaddress in cwusers:
+            if emailaddress:
+                cwuser['my_email'] = emails_by_address[emailaddress] # -> eid
+
+        # insert users
         user_by_login = {}
         def newcwuser_callback(entity, *args):
             user_by_login[entity.login] = entity
         controller.insert_entities('CWUser', cwusers, newcwuser_callback)
 
+        # insert user in_group group
         getgroup = partial(self.session.execute, 'CWGroup G WHERE G name %(n)s')
         controller.insert_relations('in_group',
                                     [(user_by_login[login],
                                       group_by_name.get(name, getgroup({'n':name}).get_entity(0,0)))
                                      for login, name in in_group])
+
+        # run vectorized & collect deferred hooks
+        errors = []
+        controller.run_deferred_hooks(errors)
+        self.assertEqual([], errors)
         self.commit()
 
-        self.assertEqual([[u'anon', u'guests'],
-                          [u'admin', u'managers'],
-                          [u'auc', u'users'],
-                          [u'dtomanos', u'users'],
-                          [u'gadelmaleh', u'users'],
-                          [u'bedos', u'users'],
-                          [u'auc', u'staff'],
-                          [u'dtomanos', u'staff'],
-                          [u'gadelmaleh', u'humorists'],
-                          [u'bedos', u'humorists']],
-                         self.session.execute('Any UN,GN WHERE U in_group G, '
-                                              'U login UN, G name GN').rows)
+        session = self.session
+        self.assertEqual(0, session.execute('Any X WHERE X has_text "gmail"').rowcount)
+
+        # let the deferred-hooks worker run
+        session = self.session
+        task = session.execute('CWWorkerTask T WHERE T operation "run-deferred-hooks"').get_entity(0,0)
+        hooksrunner = self.vreg['worker.performer'].select('run-deferred-hooks', session)
+        hooksrunner.perform_task(session, task)
+        session.commit()
+
+        # we should be green
+        session = self.session
+        self.assertEqual(1, session.execute('Any X WHERE X has_text "gmail"').rowcount)
+
+        self.assertEqual([[u'auc', u'aurelien.campeas@gmail.com', u'users, staff'],
+                          [u'bedos', u'guy@bed.os', u'users, humorists'],
+                          [u'dtomanos', u'dimitri@tomanos.info', u'users, staff'],
+                          [u'gadelmaleh', u'gad@elmaleh.com', u'users, humorists']],
+                         self.session.execute('Any UN,E,group_concat(GN) GROUPBY UN,E '
+                                              'WHERE U in_group G, U my_email XE,'
+                                              'U login UN, G name GN, XE address E').rows)
 
 if __name__ == '__main__':
     from logilab.common.testlib import unittest_main

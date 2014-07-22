@@ -26,13 +26,14 @@ from cPickle import dumps, loads
 
 from cubicweb import neg_role, validation_error, Binary, ValidationError
 from cubicweb.rset import ResultSet
-from cubicweb.predicates import is_instance
 from cubicweb.schema import RQLConstraint
+from cubicweb import server
 from cubicweb.server.edition import EditedEntity
 from cubicweb.server.utils import eschema_eid
 from cubicweb.server.session import Session
 from cubicweb.hooks.integrity import DONT_CHECK_RTYPES_ON_ADD
-from cubicweb.view import EntityAdapter
+
+from cubes.worker.entities import Performer
 
 from cubes.fastimport.hooks import HooksRunner
 from cubes.fastimport import utils # monkeypatch the native source
@@ -287,16 +288,21 @@ class FlushController(object):
 
         return entities
 
-    def run_deferred_hooks(self, errors, target):
-        self.logger.info('running deferred hooks')
+    def run_deferred_hooks(self, errors):
+        """Run vectorized hooks and pass deferred hooks to a worker task.
+        This must be called explicitly before the end of the transaction.
+        """
+        self.logger.info('running vectorized hooks')
         session = self.session
         schema = session.vreg.schema
         # we either run a 'vectorized' version of these or
         # we get a fresh session^Wtransaction to run this stuff
         # in the context of a worker task
+        vectorized_regids = set(self.vectorized_relation_hooks) | set(self.vectorized_entity_hooks)
         deferred_entity_hooks = []
         deferred_relation_hooks = []
 
+        # Handle vectorized hooks
         # entity hooks
         _ = self.session._
         for regid, entities_by_etype in self.hooksrunner.deferred_entity_hooks.iteritems():
@@ -373,7 +379,8 @@ class FlushController(object):
                 for etype, entities in entities_by_etype.iteritems():
                     for entity in entities:
                         by_etype[etype].append((entity.eid, entity.cw_attr_cache))
-                deferred_entity_hooks.append((regid, by_etype))
+                if regid not in vectorized_regids:
+                    deferred_entity_hooks.append((regid, by_etype))
 
 
         # relation hooks
@@ -403,18 +410,18 @@ class FlushController(object):
             else:
                 if not relations:
                     continue
-                deferred_relation_hooks.append((regid, relations))
+                if regid not in vectorized_regids:
+                    deferred_relation_hooks.append((regid, relations))
 
         if deferred_entity_hooks or deferred_relation_hooks:
             self.logger.info('saving info for %s entity hooks', len(deferred_entity_hooks))
             self.logger.info('saving info for %s relation hooks', len(deferred_relation_hooks))
-            session.create_entity('CWWorkerTask',
-                                  operation=u'run-deferred-hooks',
-                                  target=target,
-                                  on_behalf=session.user,
-                                  deferred_hooks=Binary(dumps((deferred_entity_hooks,
-                                                               deferred_relation_hooks))))
-        self.logger.info('/running deferred hooks')
+            task = session.create_entity('CWWorkerTask',
+                                         operation=u'run-deferred-hooks',
+                                         deferred_hooks=Binary(dumps((deferred_entity_hooks,
+                                                                      deferred_relation_hooks))))
+            self.logger.info('scheduling task %s to run deferrd hooks', task.eid)
+        self.logger.info('/running vectorized hooks')
 
 def contiguousboundaries(eids):
     """
@@ -466,15 +473,14 @@ def newsession(self, user):
     finally:
         session.close()
 
-class DeferredHooksRunner(EntityAdapter):
+class DeferredHooksRunner(Performer):
     __regid__ = 'run-deferred-hooks'
-    __select__ = is_instance('CWWorkerTask')
 
     def abort_task(self, session, task, error):
         pass
 
     def perform_task(self, session, task):
-        user = task.on_behalf[0]
+        user = task.created_by[0]
         with newsession(session, user) as session:
             entity_hooks, relation_hooks = loads(task.deferred_hooks.getvalue())
             try:
@@ -516,14 +522,16 @@ class DeferredHooksRunner(EntityAdapter):
                     entities.append(entity)
 
                 if hookregid == '__pseudo_entity_fti__':
-                    self.info('%s: fti for %s entities', etype, len(eid_plus_caches))
+                    if server.DEBUG & server.DBG_HOOKS:
+                        print '%s: fti for %s entities' % (etype, len(eid_plus_caches))
                     for entity in entities:
                         entity.complete(entity.e_schema.indexable_attributes())
                         source.index_entity(session, entity=entity)
                     continue
 
                 hookclass, events = self._fetch_hook(hookregid, 'entity')
-                self.info('entity hooks: %s %s (%s)', etype, hookregid, len(entities))
+                if server.DEBUG & server.DBG_HOOKS:
+                    print 'entity hooks: %s %s (%s)' %(etype, hookregid, len(entities))
                 for entity in entities:
                     assert entity.cw_etype == etype
                     with self._cw.security_enabled(read=False, write=False):
@@ -537,7 +545,8 @@ class DeferredHooksRunner(EntityAdapter):
         for hookregid, fromto_by_rtype in relation_hooks:
             hookclass, events = self._fetch_hook(hookregid, 'relation')
             for rtype, fromto in fromto_by_rtype.iteritems():
-                self.info('relation hooks: %s %s (%s)', rtype, hookregid, len(fromto))
+                if server.DEBUG & server.DBG_HOOKS:
+                    print 'relation hooks: %s %s (%s)' % (type, hookregid, len(fromto))
                 with session.security_enabled(read=False, write=False):
                     for eidfrom, eidto in fromto:
                         for event in events:

@@ -1,6 +1,5 @@
-login,upassword,firstname,surname,groups
-auc,4uc,Aurélien,Campéas,"users,staff"
-dtomanos,d1omanos,Dimitri,Tomanos,"users,staff"
-gadelmaleh,g4de1ma1eh,Gad,Elmaleh,"users,humorists"
-bedos,bEdOç,Guy,Bedos,"users,humorists"
-
+login,upassword,firstname,surname,email,groups
+auc,4uc,Aurélien,Campéas,aurelien.campeas@gmail.com,"users,staff"
+dtomanos,d1omanos,Dimitri,Tomanos,dimitri@tomanos.info,"users,staff"
+gadelmaleh,g4de1ma1eh,Gad,Elmaleh,gad@elmaleh.com,"users,humorists"
+bedos,bEdOç,Guy,Bedos,guy@bed.os,"users,humorists"
