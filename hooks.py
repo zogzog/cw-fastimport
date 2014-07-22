@@ -54,6 +54,7 @@ class key_data(object):
 
     def __str__(self):
         return '<%s with %s>' % (self.real, self.payload)
+    __repr__ = __str__
 
 
 class HooksRunner(object):
