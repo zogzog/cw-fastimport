@@ -25,6 +25,7 @@ from logging import getLogger
 from cPickle import dumps, loads
 
 from cubicweb import neg_role, validation_error, Binary, ValidationError
+from cubicweb.__pkginfo__ import numversion
 from cubicweb.rset import ResultSet
 from cubicweb.schema import RQLConstraint
 from cubicweb import server
@@ -37,6 +38,9 @@ from cubes.worker.entities import Performer
 
 from cubes.fastimport.hooks import HooksRunner
 from cubes.fastimport import utils # monkeypatch the native source
+
+notcw319 = numversion[:2] < (3, 19)
+
 
 YAMS_TO_PY_TYPEMAP = defaultdict(
     lambda : lambda x:x,
@@ -122,6 +126,24 @@ def _update_entity_rel_cache_add(session, entity, rtype, role, targetentity, oth
         _update_entity_rel_cache_add(session, targetentity, rtype, neg_role(role), entity, True)
 
 
+if notcw319:
+    def reserve_eids(session, qty):
+        """ not fast enough (yet) """
+        source = session.repo.system_source
+        if qty == 1:
+            return (source.create_eid(session),)
+        return source.create_eid(session, count=qty)
+else:
+    def reserve_eids(cnx, qty):
+        source = cnx.repo.system_source
+        if qty == 1:
+            yield source.create_eid(cnx)
+        lasteid = source.create_eid(cnx, count=qty)
+        start = lasteid - qty + 1
+        for eid in xrange(start, lasteid + 1):
+            yield eid
+
+
 class FlushController(object):
     hooksrunnerclass = HooksRunner
     loggername = 'cubicweb'
@@ -151,7 +173,6 @@ class FlushController(object):
                                                   self.vectorized_relation_hooks +
                                                   self.deferred_relation_hooks))
 
-
     def insert_relations(self, rtype, fromto):
         session = self.session
         self.hooksrunner.call_rtype_hooks('before_add', rtype, fromto)
@@ -165,14 +186,6 @@ class FlushController(object):
             _update_entity_rel_cache_add(session, subjentity, rtype, 'subject', objentity)
 
         self.hooksrunner.call_rtype_hooks('after_add', rtype, fromto)
-
-    def _reserve_eids(self, qty):
-        """ not fast enough (yet) """
-        assert qty > 0
-        source = self.session.repo.system_source
-        if qty == 1:
-            return (source.create_eid(self.session),)
-        return source.create_eid(self.session, count=qty)
 
     def insert_entities(self, etype, entitiesdicts,
                         postprocessentity=None):
@@ -197,8 +210,8 @@ class FlushController(object):
 
         utcnow = datetime.utcnow()
 
-        for packedstuff, eid in izip(entitiesdicts,
-                                     self._reserve_eids(len(entitiesdicts))):
+        eidsequence = reserve_eids(self.session, len(entitiesdicts))
+        for packedstuff, eid in izip(entitiesdicts, eidsequence):
 
             insertattrs = packedstuff[0]
             callbackdata = packedstuff[1:]
@@ -213,9 +226,10 @@ class FlushController(object):
             allkeys |= set(insertattrs)
 
             # prepare metadata tables
-            metadata.append({'type': etype, 'eid': eid,
-                             'source': 'system', 'asource': 'system',
-                             'mtime': utcnow})
+            meta = {'type': etype, 'eid': eid, 'asource': 'system'}
+            if notcw319:
+                meta.update({'mtime': utcnow, 'source': 'system'})
+            metadata.append(meta)
             isrelation.append({'eid_from': eid, 'eid_to': etypeid})
             for ancestor in ancestorseid:
                 isinstanceof.append({'eid_from': eid, 'eid_to': ancestor})
@@ -241,8 +255,10 @@ class FlushController(object):
         # update the repo.eid_type_source cache
         repo = self.session.repo
         for entity in entities:
-            repo._type_source_cache[entity.eid] = entity.cw_etype, 'system', None, 'system'
-
+            if notcw319:
+                repo._type_source_cache[entity.eid] = entity.cw_etype, 'system', None, 'system'
+            else:
+                repo._type_source_cache[entity.eid] = entity.cw_etype, None, 'system'
         inlinedrtypes = set(rschema.type
                             for rschema in eschema.subject_relations()
                             if rschema.inlined)
@@ -553,5 +569,3 @@ class DeferredHooksRunner(Performer):
                             hook = hookclass(session, event=event, rtype=rtype,
                                              eidfrom=eidfrom, eidto=eidto)
                             hook()
-
-

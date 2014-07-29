@@ -43,8 +43,9 @@ from functools import partial
 
 from cubicweb.devtools import testlib
 from cubes.fastimport.entities import FlushController as FC
+from cubes.fastimport.testutils import FastImportTC
 
-class DefaultTC(testlib.CubicWebTC):
+class DefaultTC(FastImportTC):
 
     def test_an_import(self):
         controller = FC(self.session, self.schema, ())
@@ -122,13 +123,17 @@ class DefaultTC(testlib.CubicWebTC):
         session = self.session
         self.assertEqual(1, session.execute('Any X WHERE X has_text "gmail"').rowcount)
 
-        self.assertEqual([[u'auc', u'aurelien.campeas@gmail.com', u'users, staff'],
-                          [u'bedos', u'guy@bed.os', u'users, humorists'],
-                          [u'dtomanos', u'dimitri@tomanos.info', u'users, staff'],
-                          [u'gadelmaleh', u'gad@elmaleh.com', u'users, humorists']],
-                         self.session.execute('Any UN,E,group_concat(GN) GROUPBY UN,E '
-                                              'WHERE U in_group G, U my_email XE,'
-                                              'U login UN, G name GN, XE address E').rows)
+        # test: we must be robust against group_concat ordering, which changed between cw 3.17 and 3.18
+        rows = self.session.execute('Any UN,E,group_concat(GN) GROUPBY UN,E '
+                                    'WHERE U in_group G, U my_email XE,'
+                                    'U login UN, G name GN, XE address E').rows
+
+        self.assertEqual([[u'auc', u'aurelien.campeas@gmail.com', [u'staff', u'users']],
+                          [u'bedos', u'guy@bed.os', [u'humorists', u'users']],
+                          [u'dtomanos', u'dimitri@tomanos.info', [u'staff', u'users']],
+                          [u'gadelmaleh', u'gad@elmaleh.com', [u'humorists', u'users']]],
+                         [[login, mail, sorted(group.strip() for group in groups.split(','))]
+                          for login, mail, groups in rows])
 
 if __name__ == '__main__':
     from logilab.common.testlib import unittest_main
