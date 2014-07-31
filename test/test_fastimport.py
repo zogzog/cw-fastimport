@@ -48,7 +48,7 @@ from cubes.fastimport.testutils import FastImportTC
 class DefaultTC(FastImportTC):
 
     def test_an_import(self):
-        controller = FC(self.session, self.schema, ())
+        controller = FC(self.session)
 
         # collect & insert groups
         cwgroups = []
@@ -94,7 +94,8 @@ class DefaultTC(FastImportTC):
         user_by_login = {}
         def newcwuser_callback(entity, *args):
             user_by_login[entity.login] = entity
-        controller.insert_entities('CWUser', cwusers, newcwuser_callback)
+        controller.insert_entities('CWUser', cwusers,
+                                   processentity=newcwuser_callback)
 
         # insert user in_group group
         getgroup = partial(self.session.execute, 'CWGroup G WHERE G name %(n)s')

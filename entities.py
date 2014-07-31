@@ -86,7 +86,7 @@ def _default_value(rdef, utcnow):
         default = YAMS_TO_PY_TYPEMAP[rdef.object.type](default)
     return default
 
-def iter_subjrdef_card_default(eschema, utcnow):
+def _iter_attr_default(eschema, utcnow):
     for rschema in eschema.subject_relations():
         if rschema.meta:
             continue
@@ -94,9 +94,7 @@ def iter_subjrdef_card_default(eschema, utcnow):
             continue
         rdef = eschema.rdef(rschema.type)
         default = _default_value(rdef, utcnow) if rschema.final else None
-        yield (rschema.type,
-               rdef.cardinality.startswith('1'),
-               default)
+        yield rschema.type, default
 
 # variant of session._update_entity_rel_cache_add that gets
 # the entities
@@ -157,11 +155,12 @@ class FlushController(object):
     deferred_relation_hooks = ('updateftirel',
                                'notifyrelationchange')
 
-    def __init__(self, session, schema, disabled_regids,
+    def __init__(self, session,
+                 disabled_regids=(),
                  deferred_entity_hooks=(),
                  deferred_relation_hooks=()):
         self.session = session
-        self.schema = schema
+        self.schema = session.vreg.schema
         self.logger = getLogger(self.loggername)
         self.hooksrunner = self.hooksrunnerclass(self.logger,
                                                  session,
@@ -188,7 +187,8 @@ class FlushController(object):
         self.hooksrunner.call_rtype_hooks('after_add', rtype, fromto)
 
     def insert_entities(self, etype, entitiesdicts,
-                        postprocessentity=None):
+                        processentity=None,
+                        processattributes=None):
 
         eschema = self.schema[etype]
         etypeclass = self.session.vreg['etypes'].etype_class(etype)
@@ -203,7 +203,6 @@ class FlushController(object):
         isrelation = []
         isinstanceof = []
         entities = []
-        entitycallbacks = []
         bytesrtypes = set(rschema.type
                           for rschema in eschema.subject_relations()
                           if 'Bytes' in rschema.targets())
@@ -211,16 +210,19 @@ class FlushController(object):
         utcnow = datetime.utcnow()
 
         eidsequence = reserve_eids(self.session, len(entitiesdicts))
-        for packedstuff, eid in izip(entitiesdicts, eidsequence):
+        for attrs_and_callbackdata, eid in izip(entitiesdicts, eidsequence):
 
-            insertattrs = packedstuff[0]
-            callbackdata = packedstuff[1:]
+            insertattrs = attrs_and_callbackdata[0]
 
             # metaattrsinit hook
             insertattrs['creation_date'] = utcnow
             insertattrs['modification_date'] = utcnow
-            insertattrs['cwuri'] = u''
+            if 'cwuri' not in insertattrs:
+                insertattrs['cwuri'] = u''
             insertattrs['eid'] = eid
+
+            if processattributes:
+                processattributes(insertattrs, attrs_and_callbackdata[1])
 
             attributes.append(insertattrs)
             allkeys |= set(insertattrs)
@@ -243,11 +245,10 @@ class FlushController(object):
             self.session.set_entity_cache(entity)
 
             entities.append(entity)
-            entitycallbacks.append(packedstuff)
 
         # give a default value to unvalued attributes
         # after this, all attributes are well defined
-        for rtype, required, default in iter_subjrdef_card_default(eschema, utcnow):
+        for rtype, default in _iter_attr_default(eschema, utcnow):
             for attr in attributes:
                 if rtype not in attr:
                     attr[rtype] = default
@@ -263,6 +264,8 @@ class FlushController(object):
                             for rschema in eschema.subject_relations()
                             if rschema.inlined)
 
+        # we compute the smallest possible inlined rtypes set to minimize
+        # the work done by the hook
         irtypes = inlinedrtypes.intersection(allkeys)
         self.hooksrunner.call_etype_hooks('before_add', etype, entities, irtypes)
 
@@ -290,9 +293,9 @@ class FlushController(object):
                 for rtype, data in binary.iteritems():
                     insertattrs[rtype] = data
 
-        if postprocessentity is not None:
-            for entity, callbackdata in izip(entities, entitycallbacks):
-                postprocessentity(entity, *callbackdata)
+        if processentity is not None:
+            for entity, callbackdata in izip(entities, entitiesdicts):
+                processentity(entity, *callbackdata)
 
         self.hooksrunner.call_etype_hooks('after_add', etype, entities, irtypes)
 
