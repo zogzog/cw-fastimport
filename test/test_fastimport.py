@@ -48,7 +48,8 @@ from cubes.fastimport.testutils import FastImportTC
 class DefaultTC(FastImportTC):
 
     def test_an_import(self):
-        controller = FC(self.session)
+        session = self.session
+        controller = FC(session)
 
         # collect & insert groups
         cwgroups = []
@@ -98,7 +99,7 @@ class DefaultTC(FastImportTC):
                                    processentity=newcwuser_callback)
 
         # insert user in_group group
-        getgroup = partial(self.session.execute, 'CWGroup G WHERE G name %(n)s')
+        getgroup = partial(session.execute, 'CWGroup G WHERE G name %(n)s')
         controller.insert_relations('in_group',
                                     [(user_by_login[login],
                                       group_by_name.get(name, getgroup({'n':name}).get_entity(0,0)))
@@ -108,10 +109,11 @@ class DefaultTC(FastImportTC):
         errors = []
         controller.run_deferred_hooks(errors)
         self.assertEqual([], errors)
-        self.commit()
+        session.commit()
 
         session = self.session
         self.assertEqual(0, session.execute('Any X WHERE X has_text "gmail"').rowcount)
+        self.assertTrue(self.session.data.get('BABAR_WAS_THERE'))
 
         # let the deferred-hooks worker run
         session = self.session
