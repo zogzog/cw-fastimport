@@ -22,6 +22,7 @@ from collections import defaultdict
 from cubicweb import server
 from cubicweb.server.hook import (ENTITIES_HOOKS as ENTITIES_EVENTS,
                                   RELATIONS_HOOKS as RELATIONS_EVENTS)
+from cubicweb.server.session import HOOKS_ALLOW_ALL, HOOKS_DENY_ALL
 
 
 class key_data(object):
@@ -91,6 +92,10 @@ class HooksRunner(object):
         return None
 
     def _iterhooks(self, event):
+        if (self.session._tx.hooks_mode == HOOKS_DENY_ALL and
+            not self.session._tx.enabled_hook_cats):
+            # no hooks & no whitelist: let's not hield anything
+            return
         for hooks in self.vreg[event + '_hooks'].itervalues():
             for hook in hooks:
                 yield hook
