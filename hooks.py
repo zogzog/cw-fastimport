@@ -75,7 +75,6 @@ class HooksRunner(object):
         self.deferred_relation_hooks = defaultdict(lambda: defaultdict(list))
 
     def select_best(self, hooks, *args, **kwargs):
-        # NOTE: later, shunt enabled_category
         score, winners = 0, []
         for hook in hooks:
             objectscore = hook.__select__(hook, *args, **kwargs)
@@ -92,12 +91,20 @@ class HooksRunner(object):
         return None
 
     def _iterhooks(self, event):
-        if (self.session._tx.hooks_mode == HOOKS_DENY_ALL and
-            not self.session._tx.enabled_hook_cats):
-            # no hooks & no whitelist: let's not hield anything
+        tx = self.session._tx
+        if tx.hooks_mode == HOOKS_DENY_ALL and not tx.enabled_hook_cats:
+            # no hooks & no whitelist: let's not yield anything
             return
+        deny = tx.hooks_mode == HOOKS_DENY_ALL
+        whitelist = tx.enabled_hook_cats
+        allow = tx.hooks_mode == HOOKS_ALLOW_ALL
+        blacklist = tx.disabled_hook_cats
         for hooks in self.vreg[event + '_hooks'].itervalues():
             for hook in hooks:
+                if deny and hook.category not in whitelist:
+                    continue
+                if allow and hook.category in blacklist:
+                    continue
                 yield hook
 
     def iterentityhooks(self, event, entity):
