@@ -19,6 +19,7 @@
 
 from collections import defaultdict
 
+from cubicweb.__pkginfo__ import numversion
 from cubicweb import server
 from cubicweb.server.hook import (ENTITIES_HOOKS as ENTITIES_EVENTS,
                                   RELATIONS_HOOKS as RELATIONS_EVENTS,
@@ -60,6 +61,12 @@ class key_data(object):
     __repr__ = __str__
 
 
+def hooks_mode_cats_holder(session):
+    if numversion[:2] < (3, 19):
+        return session._tx
+    return session._cnx
+
+
 class HooksRunner(object):
 
     def __init__(self, logger, session, disabled_regids=(),
@@ -88,7 +95,7 @@ class HooksRunner(object):
         return None
 
     def _iterhooks(self, event):
-        tx = self.session._tx
+        tx = hooks_mode_cats_holder(self.session)
         if tx.hooks_mode == HOOKS_DENY_ALL and not tx.enabled_hook_cats:
             # no hooks & no whitelist: let's not yield anything
             return
