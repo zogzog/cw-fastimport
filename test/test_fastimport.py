@@ -49,7 +49,7 @@ class DefaultTC(FastImportTC):
 
     def test_an_import(self):
         session = self.session
-        controller = FC(session)
+        controller = FC(session, disabled_regids=('disable_me_directly',))
 
         # collect & insert groups
         cwgroups = []
@@ -115,7 +115,7 @@ class DefaultTC(FastImportTC):
         session = self.session
         self.assertEqual(0, session.execute('Any X WHERE X has_text "gmail"').rowcount)
         self.assertNone(self.session.data.get('BABAR_WAS_THERE'))
-        self.assertTrue(self.session.data.get('CELESTE_WAS_THERE'))
+        self.assertNone(self.session.data.get('CELESTE_WAS_THERE'))
 
         # let the deferred-hooks worker run
         session = self.session
