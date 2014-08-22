@@ -21,7 +21,8 @@ from collections import defaultdict
 
 from cubicweb import server
 from cubicweb.server.hook import (ENTITIES_HOOKS as ENTITIES_EVENTS,
-                                  RELATIONS_HOOKS as RELATIONS_EVENTS)
+                                  RELATIONS_HOOKS as RELATIONS_EVENTS,
+                                  enabled_category)
 from cubicweb.server.session import HOOKS_ALLOW_ALL, HOOKS_DENY_ALL
 
 
@@ -74,20 +75,16 @@ class HooksRunner(object):
         self.deferred_entity_hooks = defaultdict(lambda: defaultdict(list))
         self.deferred_relation_hooks = defaultdict(lambda: defaultdict(list))
 
-    def select_best(self, hooks, *args, **kwargs):
-        score, winners = 0, []
-        for hook in hooks:
-            objectscore = hook.__select__(hook, *args, **kwargs)
-            if objectscore > score:
-                score, winners = objectscore, [hook]
-            elif objectscore > 0 and objectscore == score:
-                winners.append(hook)
-        if winners is None:
-            return None
-        # return the result of calling the object
-        if winners:
-            assert len(winners) <= 1, winners
-            return winners[0](*args, **kwargs)
+    def instance(self, hookclass, *args, **kwargs):
+        selector = hookclass.__select__
+        # let's not evaluate the enabled_category selector
+        if isinstance(selector, enabled_category):
+            # if we get there, this has actually been already evaluated
+            return hookclass(*args, **kwargs)
+        # unfortunately, the enabled_category embedded in the AndPredicate
+        # cannot be skipped as easily
+        if selector(hookclass, *args, **kwargs):
+            return hookclass(*args, **kwargs)
         return None
 
     def _iterhooks(self, event):
@@ -116,7 +113,7 @@ class HooksRunner(object):
                 key = key_data(hklass.__regid__, event)
                 self.deferred_entity_hooks[key][entity.cw_etype].append(entity)
                 continue
-            hook = self.select_best([hklass], self.session, event=event, entity=entity)
+            hook = self.instance(hklass, self.session, event=event, entity=entity)
             if hook is not None:
                 yield hook
 
@@ -134,11 +131,11 @@ class HooksRunner(object):
                 key = key_data(hklass.__regid__, event)
                 self.deferred_relation_hooks[key][rtype].append(fromto)
                 continue
-            hook = self.select_best([hklass], self.session,
-                                    event=event,
-                                    rtype=rtype,
-                                    eidfrom=entity.eid,
-                                    eidto=entity.cw_attr_cache[rtype])
+            hook = self.instance(hklass, self.session,
+                                 event=event,
+                                 rtype=rtype,
+                                 eidfrom=entity.eid,
+                                 eidto=entity.cw_attr_cache[rtype])
             if hook is not None:
                 yield hook
 
@@ -153,11 +150,11 @@ class HooksRunner(object):
                 key = key_data(hklass.__regid__, event)
                 self.deferred_relation_hooks[key][rtype].append(fromto)
                 continue
-            hook = self.select_best([hklass], self.session,
-                                    event=event,
-                                    rtype=rtype,
-                                    eidfrom=relation[0].eid,
-                                    eidto=relation[1].eid)
+            hook = self.instance(hklass, self.session,
+                                 event=event,
+                                 rtype=rtype,
+                                 eidfrom=relation[0].eid,
+                                 eidto=relation[1].eid)
             if hook is not None:
                 yield hook
 
@@ -172,11 +169,7 @@ class HooksRunner(object):
             if hook.__regid__ in self.disabled_regids:
                 pruned.add(hook)
                 continue
-            enabled_cat, main_predicate = hook.filterable_selectors()
-            if enabled_cat is not None:
-                if not enabled_cat(hook, self.session):
-                    pruned.add(hook)
-                    continue
+            _enabled_cat, main_predicate = hook.filterable_selectors()
             if main_predicate is not None:
                 if not main_predicate(hook, self.session, entity=entity):
                     pruned.add(hook)
@@ -195,11 +188,7 @@ class HooksRunner(object):
             if hook.__regid__ in self.disabled_regids:
                 pruned.add(hook)
                 continue
-            enabled_cat, main_predicate = hook.filterable_selectors()
-            if enabled_cat is not None:
-                if not enabled_cat(hook, self.session):
-                    pruned.add(hook)
-                    continue
+            _enabled_cat, main_predicate = hook.filterable_selectors()
             if main_predicate is not None:
                 if not main_predicate(hook, self.session,
                                       eidfrom=entity.eid,
@@ -220,11 +209,7 @@ class HooksRunner(object):
             if hook.__regid__ in self.disabled_regids:
                 pruned.add(hook)
                 continue
-            enabled_cat, main_predicate = hook.filterable_selectors()
-            if enabled_cat is not None:
-                if not enabled_cat(hook, self.session):
-                    pruned.add(hook)
-                    continue
+            _enabled_cat, main_predicate = hook.filterable_selectors()
             if main_predicate is not None:
                 if not main_predicate(hook, self.session,
                                       eidfrom=relation[0].eid,

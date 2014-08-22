@@ -95,8 +95,9 @@ class DefaultTC(FastImportTC):
         user_by_login = {}
         def newcwuser_callback(entity, *args):
             user_by_login[entity.login] = entity
-        controller.insert_entities('CWUser', cwusers,
-                                   processentity=newcwuser_callback)
+        with session.allow_all_hooks_but('disable-me'):
+            controller.insert_entities('CWUser', cwusers,
+                                       processentity=newcwuser_callback)
 
         # insert user in_group group
         getgroup = partial(session.execute, 'CWGroup G WHERE G name %(n)s')
@@ -113,7 +114,7 @@ class DefaultTC(FastImportTC):
 
         session = self.session
         self.assertEqual(0, session.execute('Any X WHERE X has_text "gmail"').rowcount)
-        self.assertTrue(self.session.data.get('BABAR_WAS_THERE'))
+        self.assertNone(self.session.data.get('BABAR_WAS_THERE'))
 
         # let the deferred-hooks worker run
         session = self.session
