@@ -98,6 +98,8 @@ class HooksRunner(object):
         blacklist = tx.disabled_hook_cats
         for hooks in self.vreg[event + '_hooks'].itervalues():
             for hook in hooks:
+                if hook.__regid__ in self.disabled_regids:
+                    continue
                 if deny and hook.category not in whitelist:
                     continue
                 if allow and hook.category in blacklist:
@@ -166,9 +168,6 @@ class HooksRunner(object):
 
         pruned = set()
         for hook in self._iterhooks(event):
-            if hook.__regid__ in self.disabled_regids:
-                pruned.add(hook)
-                continue
             _enabled_cat, main_predicate = hook.filterable_selectors()
             if main_predicate is not None:
                 if not main_predicate(hook, self.session, entity=entity):
@@ -185,9 +184,6 @@ class HooksRunner(object):
 
         pruned = set()
         for hook in self._iterhooks(event):
-            if hook.__regid__ in self.disabled_regids:
-                pruned.add(hook)
-                continue
             _enabled_cat, main_predicate = hook.filterable_selectors()
             if main_predicate is not None:
                 if not main_predicate(hook, self.session,
@@ -206,9 +202,6 @@ class HooksRunner(object):
 
         pruned = set()
         for hook in self._iterhooks(event):
-            if hook.__regid__ in self.disabled_regids:
-                pruned.add(hook)
-                continue
             _enabled_cat, main_predicate = hook.filterable_selectors()
             if main_predicate is not None:
                 if not main_predicate(hook, self.session,
