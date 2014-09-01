@@ -435,11 +435,12 @@ class FlushController(object):
         if deferred_entity_hooks or deferred_relation_hooks:
             self.logger.info('saving info for %s entity hooks', len(deferred_entity_hooks))
             self.logger.info('saving info for %s relation hooks', len(deferred_relation_hooks))
-            task = session.create_entity('CWWorkerTask',
-                                         operation=u'run-deferred-hooks',
-                                         deferred_hooks=Binary(dumps((deferred_entity_hooks,
-                                                                      deferred_relation_hooks))))
-            self.logger.info('scheduling task %s to run deferrd hooks', task.eid)
+            with session.deny_all_hooks_but('metadata', 'workflow'):
+                task = session.create_entity('CWWorkerTask',
+                                             operation=u'run-deferred-hooks',
+                                             deferred_hooks=Binary(dumps((deferred_entity_hooks,
+                                                                          deferred_relation_hooks))))
+                self.logger.info('scheduling task %s to run deferrd hooks', task.eid)
         self.logger.info('/running vectorized hooks')
 
 def contiguousboundaries(eids):
