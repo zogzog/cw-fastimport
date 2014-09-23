@@ -69,7 +69,7 @@ class DefaultTC(FastImportTC):
         emails_by_address= {}
         with open(osp.join(self.datadir, 'cwusers.csv'), 'rb') as usersfile:
             reader = csv.DictReader(usersfile)
-            for idx, item in enumerate(reader):
+            for item in reader:
                 item = dict((k, v.decode('utf-8'))
                             for k, v in item.iteritems())
                 for name in item.pop('groups', '').split(','):
