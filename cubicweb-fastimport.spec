@@ -21,6 +21,7 @@ BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-buildroot
 
 BuildRequires:  %{python} %{python}-setuptools
 Requires:       cubicweb >= 3.17.17
+Requires:       cubicweb-worker >= 3.0.3
 
 %description
 Faster-than-baseline entities and relation insertions
