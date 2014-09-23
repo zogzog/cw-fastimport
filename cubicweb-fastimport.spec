@@ -9,7 +9,7 @@
 %{!?_python_sitelib: %define _python_sitelib %(%{__python} -c "from distutils.sysconfig import get_python_lib; print get_python_lib()")}
 
 Name:           cubicweb-fastimport
-Version:        0.1.0
+Version:        0.2.0
 Release:        logilab.1%{?dist}
 Summary:        Faster-than-baseline entities and relation insertions
 Group:          Applications/Internet
@@ -20,7 +20,7 @@ BuildArch:      noarch
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-buildroot
 
 BuildRequires:  %{python} %{python}-setuptools
-Requires:       cubicweb >= 3.17.15
+Requires:       cubicweb >= 3.17.17
 
 %description
 Faster-than-baseline entities and relation insertions

@@ -9,8 +9,8 @@ XS-Python-Version: >= 2.6
 Package: cubicweb-fastimport
 Architecture: all
 Depends:
- cubicweb-common (>= 3.17.15),
- cubicweb-worker (>= 3.0.1),
+ cubicweb-common (>= 3.17.17),
+ cubicweb-worker (>= 3.0.3),
  python-numpy,
  ${python:Depends},
  ${misc:Depends},

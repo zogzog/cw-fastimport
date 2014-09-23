@@ -4,7 +4,7 @@
 modname = 'fastimport'
 distname = 'cubicweb-fastimport'
 
-numversion = (0, 1, 0)
+numversion = (0, 2, 0)
 version = '.'.join(str(num) for num in numversion)
 
 license = 'LGPL'
@@ -13,7 +13,7 @@ author_email = 'contact@logilab.fr'
 description = 'Faster-than-baseline entities and relation insertions'
 web = 'http://www.cubicweb.org/project/%s' % distname
 
-__depends__ =  {'cubicweb': '>= 3.17.15',
+__depends__ =  {'cubicweb': '>= 3.17.17',
                 'cubicweb-worker': '>= 3.0.3',
                 'numpy': None}
 __recommends__ = {}
