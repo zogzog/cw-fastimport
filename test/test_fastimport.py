@@ -42,6 +42,9 @@ import csv
 from functools import partial
 
 from cubicweb.devtools import testlib
+
+from cubes.worker.testutils import run_all_tasks
+
 from cubes.fastimport.entities import FlushController as FC
 from cubes.fastimport.testutils import FastImportTC
 
@@ -117,11 +120,8 @@ class DefaultTC(FastImportTC):
         self.assertNone(self.session.data.get('BABAR_WAS_THERE'))
         self.assertNone(self.session.data.get('CELESTE_WAS_THERE'))
 
-        # let the deferred-hooks worker run
-        session = self.session
-        task = session.execute('CWWorkerTask T WHERE T operation "run-deferred-hooks"').get_entity(0,0)
-        hooksrunner = self.vreg['worker.performer'].select('run-deferred-hooks', session)
-        hooksrunner.perform_task(session, task)
+        # let the deferred-hooks task run
+        run_all_tasks(self.session)
         session.commit()
 
         # we should be green
