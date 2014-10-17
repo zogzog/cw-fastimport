@@ -140,9 +140,8 @@ class DefaultTC(FastImportTC):
                          [[login, mail, sorted(group.strip() for group in groups.split(','))]
                           for login, mail, groups in rows])
 
-        # this is bug #4491927
         self.assertEqual([[u'guests', 1], [u'managers', 1], [u'owners', 1],
-                          [u'users', 1], [u'staff', None], [u'humorists', None]],
+                          [u'users', 1], [u'staff', 1], [u'humorists', 1]],
                          self.execute('Any N,S ORDERBY X WHERE X is CWGroup, X name N, X cw_source S?').rows)
 
 

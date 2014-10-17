@@ -155,6 +155,9 @@ class FlushController(object):
     deferred_relation_hooks = ('updateftirel',
                                'notifyrelationchange')
 
+    # debatable option
+    handle_cw_source_relation = True
+
     def __init__(self, session,
                  disabled_regids=(),
                  deferred_entity_hooks=(),
@@ -199,9 +202,16 @@ class FlushController(object):
         allkeys = set()
         attributes = []
         binaries = []
+
         metadata = []
         isrelation = []
         isinstanceof = []
+        cw_source = []
+
+        system_source_eid = None
+        if self.handle_cw_source_relation:
+            system_source_eid = self.session.execute('CWSource S WHERE S name "system"').rows[0][0]
+
         entities = []
         bytesrtypes = set(rschema.type
                           for rschema in eschema.subject_relations()
@@ -235,6 +245,9 @@ class FlushController(object):
             isrelation.append({'eid_from': eid, 'eid_to': etypeid})
             for ancestor in ancestorseid:
                 isinstanceof.append({'eid_from': eid, 'eid_to': ancestor})
+
+            if system_source_eid:
+                cw_source.append({'eid_from': eid, 'eid_to': system_source_eid})
 
             # create an entity
             entity = etypeclass(self.session)
@@ -286,6 +299,8 @@ class FlushController(object):
         _insertmany(self.session, 'entities', metadata)
         _insertmany(self.session, 'is_relation', isrelation)
         _insertmany(self.session, 'is_instance_of_relation', isinstanceof)
+        if cw_source:
+            _insertmany(self.session, 'cw_source_relation', cw_source)
 
         if bytesrtypes:
             # wipe the buffer, restore the Binary object
