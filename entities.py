@@ -163,6 +163,8 @@ class FlushController(object):
                  deferred_entity_hooks=(),
                  deferred_relation_hooks=()):
         self.session = session
+        if not notcw319:
+            self.session.mode = 'write'
         self.schema = session.vreg.schema
         self.logger = getLogger(self.loggername)
         self.hooksrunner = self.hooksrunnerclass(self.logger,
