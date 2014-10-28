@@ -64,7 +64,12 @@ class key_data(object):
 def hooks_mode_cats_holder(session):
     if numversion[:2] < (3, 19):
         return session._tx
-    return session._cnx
+    try:
+        # a 'client connection'
+        return session._cnx
+    except AttributeError:
+        # a 'repo connection'
+        return session
 
 
 class HooksRunner(object):
