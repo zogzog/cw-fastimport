@@ -1,3 +1,9 @@
+cubicweb-fastimport (0.2.1-1) unstable; urgency=low
+
+  * new upstream release
+
+ -- Aurelien Campeas <aurelien.campeas@logilab.fr>  Wed, 26 Nov 2014 12:31:33 +0100
+
 cubicweb-fastimport (0.2.0-1) unstable; urgency=low
 
   * new upstream release
