@@ -11,7 +11,6 @@ Architecture: all
 Depends:
  cubicweb-common (>= 3.17.17),
  cubicweb-worker (>= 3.0.3),
- python-numpy,
  ${python:Depends},
  ${misc:Depends},
 Description: Faster-than-baseline entities and relation insertions

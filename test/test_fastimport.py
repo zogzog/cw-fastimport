@@ -50,6 +50,12 @@ from cubes.fastimport.testutils import FastImportTC
 
 class DefaultTC(FastImportTC):
 
+    def test_boundaries(self):
+        from cubes.fastimport.entities import contiguousboundaries
+        r = [1, 2, 3, 4, 7, 55, 56, 57, 98, 99]
+        self.assertEqual([(1, 4), (7, 7), (55, 57), (98, 99)],
+                         list(contiguousboundaries(r)))
+
     def test_an_import(self):
         session = self.session
         controller = FC(session, disabled_regids=('disable_me_directly',))
