@@ -321,6 +321,10 @@ class FlushController(object):
         self.insert_relations('owned_by', fromto)
         self.insert_relations('created_by', fromto)
 
+        # avoid an excessive memory consumption: the user is never cleared by
+        # cnx.commit() or cnx.clear()
+        user._cw_related_cache.clear()
+
         return entities
 
     def run_deferred_hooks(self, errors):
