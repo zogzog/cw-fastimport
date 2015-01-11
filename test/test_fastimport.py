@@ -123,8 +123,8 @@ class DefaultTC(FastImportTC):
             cnx.commit()
 
             self.assertEqual(0, cnx.execute('Any X WHERE X has_text "gmail"').rowcount)
-            self.assertNone(cnx.data.get('BABAR_WAS_THERE'))
-            self.assertNone(cnx.data.get('CELESTE_WAS_THERE'))
+            self.assertIsNone(cnx.data.get('BABAR_WAS_THERE'))
+            self.assertIsNone(cnx.data.get('CELESTE_WAS_THERE'))
 
             # let the deferred-hooks task run
             run_all_tasks(cnx)
