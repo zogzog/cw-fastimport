@@ -25,6 +25,8 @@ from cubicweb.server.hook import (ENTITIES_HOOKS as ENTITIES_EVENTS,
                                   enabled_category)
 from cubicweb.server.session import HOOKS_ALLOW_ALL, HOOKS_DENY_ALL
 
+from cubes.fastimport.utils import transactor, nohook
+
 
 class key_data(object):
     """a two-parts object whose eq/hashability belong to the first `key`
@@ -60,15 +62,6 @@ class key_data(object):
     __repr__ = __str__
 
 
-def hooks_mode_cats_holder(cnx):
-    try:
-        # a 'client connection'
-        return cnx._cnx
-    except AttributeError:
-        # a 'repo connection'
-        return cnx
-
-
 class HooksRunner(object):
 
     def __init__(self, logger, cnx, disabled_regids=(),
@@ -97,9 +90,8 @@ class HooksRunner(object):
         return None
 
     def _iterhooks(self, event):
-        tx = hooks_mode_cats_holder(self.cnx)
-        if tx.hooks_mode == HOOKS_DENY_ALL and not tx.enabled_hook_cats:
-            # no hooks & no whitelist: let's not yield anything
+        tx = transactor(self.cnx)
+        if nohook(tx):
             return
         deny = tx.hooks_mode == HOOKS_DENY_ALL
         whitelist = tx.enabled_hook_cats
