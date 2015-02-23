@@ -34,6 +34,7 @@ from cubicweb.hooks.integrity import DONT_CHECK_RTYPES_ON_ADD
 
 from cubes.worker.entities import Performer
 
+from cubes.fastimport.utils import nohook
 from cubes.fastimport.hooks import HooksRunner
 
 
@@ -165,17 +166,19 @@ class FlushController(object):
 
     def insert_relations(self, rtype, fromto):
         cnx = self.cnx
-        self.hooksrunner.call_rtype_hooks('before_add', rtype, fromto)
+        runhooks = not nohook(cnx)
+        if runhooks:
+            self.hooksrunner.call_rtype_hooks('before_add', rtype, fromto)
 
         _insertmany(cnx, rtype + '_relation',
                     [{'eid_from': fromentity.eid, 'eid_to': toentity.eid}
                      for fromentity, toentity in fromto])
 
-        # is the timing of this thing right ? wouldn't earlier be better ?
-        for subjentity, objentity in fromto:
-            _update_entity_rel_cache_add(cnx, subjentity, rtype, 'subject', objentity)
+        if runhooks:
+            for subjentity, objentity in fromto:
+                _update_entity_rel_cache_add(cnx, subjentity, rtype, 'subject', objentity)
 
-        self.hooksrunner.call_rtype_hooks('after_add', rtype, fromto)
+            self.hooksrunner.call_rtype_hooks('after_add', rtype, fromto)
 
     def insert_entities(self, etype, entitiesdicts,
                         processentity=None,
@@ -260,10 +263,13 @@ class FlushController(object):
                             for rschema in eschema.subject_relations()
                             if rschema.inlined)
 
+        runhooks = not nohook(self.cnx)
+
         # we compute the smallest possible inlined rtypes set to minimize
         # the work done by the hook
         irtypes = inlinedrtypes.intersection(allkeys)
-        self.hooksrunner.call_etype_hooks('before_add', etype, entities, irtypes)
+        if runhooks:
+            self.hooksrunner.call_etype_hooks('before_add', etype, entities, irtypes)
 
 
         # Binary -> buffer thing
@@ -295,13 +301,14 @@ class FlushController(object):
             for entity, callbackdata in izip(entities, entitiesdicts):
                 processentity(entity, *callbackdata)
 
-        self.hooksrunner.call_etype_hooks('after_add', etype, entities, irtypes)
-
-        # setowner hook
         user = self.cnx.user
-        fromto = tuple((entity, user) for entity in entities)
-        self.insert_relations('owned_by', fromto)
-        self.insert_relations('created_by', fromto)
+        if runhooks:
+            self.hooksrunner.call_etype_hooks('after_add', etype, entities, irtypes)
+
+            # setowner hook
+            fromto = tuple((entity, user) for entity in entities)
+            self.insert_relations('owned_by', fromto)
+            self.insert_relations('created_by', fromto)
 
         # avoid an excessive memory consumption: the user is never cleared by
         # cnx.commit() or cnx.clear()
@@ -315,6 +322,8 @@ class FlushController(object):
         """
         self.logger.info('running vectorized hooks')
         cnx = self.cnx
+        if nohook(cnx):
+            return
         schema = cnx.vreg.schema
         # we either run a 'vectorized' version of these or
         # we get a fresh session^Wtransaction to run this stuff
