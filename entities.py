@@ -164,7 +164,7 @@ class FlushController(object):
                                                   self.vectorized_relation_hooks +
                                                   self.deferred_relation_hooks))
 
-    def insert_relations(self, rtype, fromto):
+    def insert_relations(self, rtype, fromto, _update_relcache=True):
         cnx = self.cnx
         runhooks = not nohook(cnx)
         if runhooks:
@@ -175,8 +175,9 @@ class FlushController(object):
                      for fromentity, toentity in fromto])
 
         if runhooks:
-            for subjentity, objentity in fromto:
-                _update_entity_rel_cache_add(cnx, subjentity, rtype, 'subject', objentity)
+            if _update_relcache:
+                for subjentity, objentity in fromto:
+                    _update_entity_rel_cache_add(cnx, subjentity, rtype, 'subject', objentity)
 
             self.hooksrunner.call_rtype_hooks('after_add', rtype, fromto)
 
@@ -307,8 +308,8 @@ class FlushController(object):
 
             # setowner hook
             fromto = tuple((entity, user) for entity in entities)
-            self.insert_relations('owned_by', fromto)
-            self.insert_relations('created_by', fromto)
+            self.insert_relations('owned_by', fromto, _update_relcache=False)
+            self.insert_relations('created_by', fromto, _update_relcache=False)
 
         # avoid an excessive memory consumption: the user is never cleared by
         # cnx.commit() or cnx.clear()
