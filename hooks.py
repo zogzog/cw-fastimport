@@ -18,12 +18,18 @@
 """cubicweb-fastimport specific hooks and operations"""
 
 from collections import defaultdict
+from contextlib import contextmanager
+from cPickle import loads
 
-from cubicweb import server
+from cubicweb import server, ValidationError
+from cubicweb.server.session import Session
 from cubicweb.server.hook import (ENTITIES_HOOKS as ENTITIES_EVENTS,
                                   RELATIONS_HOOKS as RELATIONS_EVENTS,
                                   enabled_category)
 from cubicweb.server.session import HOOKS_ALLOW_ALL, HOOKS_DENY_ALL
+from cubicweb.server.edition import EditedEntity
+
+from cubes.worker.entities import Performer
 
 from cubes.fastimport.utils import transactor, nohook
 
@@ -278,3 +284,95 @@ class HooksRunner(object):
                     self.deferred_entity_hooks[key][entity.cw_etype].append(entity)
                 if server.DEBUG & server.DBG_HOOKS:
                     print '%s: preparing %s entities for fti' % (etype, len(entities))
+
+
+@contextmanager
+def newsession(self, user):
+    session = Session(user, self.repo)
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+class DeferredHooksRunner(Performer):
+    __regid__ = 'run-deferred-hooks'
+
+    def abort_task(self, cnx, task, error):
+        pass
+
+    def perform_task(self, cnx, task):
+        user = task.created_by[0]
+        with newsession(cnx, user) as session:
+            with session.new_cnx() as cnx:
+                entity_hooks, relation_hooks = loads(task.deferred_hooks.getvalue())
+                try:
+                    self.process_entities_hooks(entity_hooks)
+                except ValidationError, verr:
+                    cnx.exception(verr)
+                    self.abort_task(cnx, task, verr)
+                try:
+                    self.process_relations_hooks(relation_hooks)
+                except ValidationError, verr:
+                    cnx.exception(verr)
+                    self.abort_task(cnx, task, verr)
+                cnx.commit()
+                return cnx._('Success')
+
+    def _fetch_hook(self, hookregid, hooktype=None):
+        assert hooktype in ('entity', 'relation')
+        hook = self._cw.vreg['%s_hooks' % hookregid.payload][hookregid.real][0]
+        events = set(ev for ev in hook.events if hooktype in ev and 'add' in ev)
+        assert hookregid.payload in events, hook
+        return hook, events
+
+    def process_entities_hooks(self, entity_hooks):
+        cnx = self._cw
+        source = cnx.repo.system_source
+
+        for hookregid, stuff in entity_hooks:
+            for etype, eid_plus_caches in stuff.iteritems():
+                entities = []
+                etypeclass = cnx.vreg['etypes'].etype_class(etype)
+
+                for eid, cache in eid_plus_caches:
+                    entity = etypeclass(cnx)
+                    entity.eid = eid
+                    entity.cw_attr_cache = cache
+                    entity.cw_edited = EditedEntity(entity, **cache)
+
+                    cnx.set_entity_cache(entity)
+                    entities.append(entity)
+
+                if hookregid == '__pseudo_entity_fti__':
+                    if server.DEBUG & server.DBG_HOOKS:
+                        print '%s: fti for %s entities' % (etype, len(eid_plus_caches))
+                    for entity in entities:
+                        entity.complete(entity.e_schema.indexable_attributes())
+                        source.index_entity(cnx, entity=entity)
+                    continue
+
+                hookclass, events = self._fetch_hook(hookregid, 'entity')
+                if server.DEBUG & server.DBG_HOOKS:
+                    print 'entity hooks: %s %s (%s)' %(etype, hookregid, len(entities))
+                for entity in entities:
+                    assert entity.cw_etype == etype
+                    with self._cw.security_enabled(read=False, write=False):
+                        for event in events:
+                            hook = hookclass(cnx, entity=entity, event=event)
+                            hook()
+
+    def process_relations_hooks(self, relation_hooks):
+        session = self._cw
+
+        for hookregid, fromto_by_rtype in relation_hooks:
+            hookclass, events = self._fetch_hook(hookregid, 'relation')
+            for rtype, fromto in fromto_by_rtype.iteritems():
+                if server.DEBUG & server.DBG_HOOKS:
+                    print 'relation hooks: %s %s (%s)' % (type, hookregid, len(fromto))
+                with session.security_enabled(read=False, write=False):
+                    for eidfrom, eidto in fromto:
+                        for event in events:
+                            hook = hookclass(session, event=event, rtype=rtype,
+                                             eidfrom=eidfrom, eidto=eidto)
+                            hook()
