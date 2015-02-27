@@ -129,6 +129,43 @@ def reserve_eids(cnx, qty):
     for eid in xrange(start, lasteid + 1):
         yield eid
 
+def contiguousboundaries(intseq):
+    """
+    >>> r = [1, 2, 3, 4, 7, 55, 56, 57, 98, 99]
+    >>> assert r == sorted(r)
+    >>> list(contiguousboundaries(r))
+    [(1, 4), (7, 7), (55, 57), (98, 99)]
+    """
+    intseq = iter(intseq)
+    low = last = next(intseq)
+    for num in intseq:
+        if num - last != 1:
+            yield low, last
+            low = last = num
+        else:
+            last = num
+    yield low, last
+
+def check_attribute_repo_constraint(cnx, logger, entities, constraint):
+    eidboundaries = contiguousboundaries([e.eid for e in entities])
+    for mineid, maxeid in eidboundaries:
+        if not _check_attribute_repo_constraint(cnx, logger, mineid, maxeid, constraint):
+            return False
+    return True
+
+def _check_attribute_repo_constraint(cnx, logger, mineid, maxeid, constraint):
+    expression = 'S eid > %(mineid)s, S eid < %(maxeid)s, ' + constraint.expression
+    args = {'mineid': mineid - 1, 'maxeid': maxeid + 1}
+    if 'U' in constraint.rqlst.defined_vars:
+        expression = 'U eid %(u)s, ' + expression
+        args['u'] = cnx.user.eid
+    rql = 'Any %s WHERE %s' % (','.join(sorted(constraint.mainvars)), expression)
+    if constraint.distinct_query:
+        rql = 'DISTINCT ' + rql
+    logger.info('constraint execution: %s (args: %s)', rql, args)
+    rset = cnx.execute(rql, args, build_descr=False)
+    return rset.rowcount == (maxeid - mineid) + 1
+
 
 class FlushController(object):
     hooksrunnerclass = HooksRunner
@@ -455,42 +492,6 @@ class FlushController(object):
                 self.logger.info('scheduling task %s to run deferrd hooks', task.eid)
         self.logger.info('/running vectorized hooks')
 
-def contiguousboundaries(intseq):
-    """
-    >>> r = [1, 2, 3, 4, 7, 55, 56, 57, 98, 99]
-    >>> assert r == sorted(r)
-    >>> list(contiguousboundaries(r))
-    [(1, 4), (7, 7), (55, 57), (98, 99)]
-    """
-    intseq = iter(intseq)
-    low = last = next(intseq)
-    for num in intseq:
-        if num - last != 1:
-            yield low, last
-            low = last = num
-        else:
-            last = num
-    yield low, last
-
-def check_attribute_repo_constraint(cnx, logger, entities, constraint):
-    eidboundaries = contiguousboundaries([e.eid for e in entities])
-    for mineid, maxeid in eidboundaries:
-        if not _check_attribute_repo_constraint(cnx, logger, mineid, maxeid, constraint):
-            return False
-    return True
-
-def _check_attribute_repo_constraint(cnx, logger, mineid, maxeid, constraint):
-    expression = 'S eid > %(mineid)s, S eid < %(maxeid)s, ' + constraint.expression
-    args = {'mineid': mineid - 1, 'maxeid': maxeid + 1}
-    if 'U' in constraint.rqlst.defined_vars:
-        expression = 'U eid %(u)s, ' + expression
-        args['u'] = cnx.user.eid
-    rql = 'Any %s WHERE %s' % (','.join(sorted(constraint.mainvars)), expression)
-    if constraint.distinct_query:
-        rql = 'DISTINCT ' + rql
-    logger.info('constraint execution: %s (args: %s)', rql, args)
-    rset = cnx.execute(rql, args, build_descr=False)
-    return rset.rowcount == (maxeid - mineid) + 1
 
 
 
