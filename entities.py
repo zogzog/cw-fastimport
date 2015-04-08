@@ -83,7 +83,7 @@ def _iter_attr_default(eschema, utcnow):
             continue
         if not (rschema.final or rschema.inlined):
             continue
-        rdef = eschema.rdef(rschema.type)
+        rdef = eschema.rdef(rschema.type, takefirst=True)
         default = _default_value(rdef, utcnow) if rschema.final else None
         yield rschema.type, default
 
