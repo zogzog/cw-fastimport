@@ -308,12 +308,13 @@ class FlushController(object):
         # Binary -> buffer thing
         if bytesrtypes:
             for insertattrs in attributes:
-                binary = {}
+                binary_or_none = {}
                 for rtype in bytesrtypes:
                     data = insertattrs[rtype]
-                    binary[rtype] = data
-                    insertattrs[rtype] = buffer(data.getvalue())
-                    binaries.append(binary)
+                    binary_or_none[rtype] = data
+                    if data is not None:
+                        insertattrs[rtype] = buffer(data.getvalue())
+                    binaries.append(binary_or_none)
 
         # insert entities
         _insertmany(self.cnx, etype, attributes, prefix='cw_')
@@ -326,8 +327,8 @@ class FlushController(object):
 
         if bytesrtypes:
             # wipe the buffer, restore the Binary object
-            for binary, insertattrs in izip(binaries, attributes):
-                for rtype, data in binary.iteritems():
+            for binary_or_none, insertattrs in izip(binaries, attributes):
+                for rtype, data in binary_or_none.iteritems():
                     insertattrs[rtype] = data
 
         if processentity is not None:

@@ -1,4 +1,4 @@
-from yams.buildobjs import RelationDefinition
+from yams.buildobjs import RelationDefinition, Bytes
 
 class my_email(RelationDefinition):
     fulltext_container = 'subject'
@@ -6,3 +6,8 @@ class my_email(RelationDefinition):
     object = 'EmailAddress'
     cardinality = '??'
     inlined = True
+
+class some_bytes(RelationDefinition):
+    subject = 'CWUser'
+    object = 'Bytes'
+    cardinality = '??'
