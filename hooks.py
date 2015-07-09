@@ -19,7 +19,6 @@
 
 from collections import defaultdict
 
-from cubicweb.__pkginfo__ import numversion
 from cubicweb import server
 from cubicweb.server.hook import (ENTITIES_HOOKS as ENTITIES_EVENTS,
                                   RELATIONS_HOOKS as RELATIONS_EVENTS,
@@ -61,24 +60,22 @@ class key_data(object):
     __repr__ = __str__
 
 
-def hooks_mode_cats_holder(session):
-    if numversion[:2] < (3, 19):
-        return session._tx
+def hooks_mode_cats_holder(cnx):
     try:
         # a 'client connection'
-        return session._cnx
+        return cnx._cnx
     except AttributeError:
         # a 'repo connection'
-        return session
+        return cnx
 
 
 class HooksRunner(object):
 
-    def __init__(self, logger, session, disabled_regids=(),
+    def __init__(self, logger, cnx, disabled_regids=(),
                  deferred_entity_hooks=(), deferred_relation_hooks=()):
         self.logger = logger
-        self.vreg = session.vreg
-        self.session = session
+        self.vreg = cnx.vreg
+        self.cnx = cnx
         self.disabled_regids = frozenset(disabled_regids)
 
         self.deferred_entity_regids = set(deferred_entity_hooks)
@@ -100,7 +97,7 @@ class HooksRunner(object):
         return None
 
     def _iterhooks(self, event):
-        tx = hooks_mode_cats_holder(self.session)
+        tx = hooks_mode_cats_holder(self.cnx)
         if tx.hooks_mode == HOOKS_DENY_ALL and not tx.enabled_hook_cats:
             # no hooks & no whitelist: let's not yield anything
             return
@@ -127,7 +124,7 @@ class HooksRunner(object):
                 key = key_data(hklass.__regid__, event)
                 self.deferred_entity_hooks[key][entity.cw_etype].append(entity)
                 continue
-            hook = self.instance(hklass, self.session, event=event, entity=entity)
+            hook = self.instance(hklass, self.cnx, event=event, entity=entity)
             if hook is not None:
                 yield hook
 
@@ -145,7 +142,7 @@ class HooksRunner(object):
                 key = key_data(hklass.__regid__, event)
                 self.deferred_relation_hooks[key][rtype].append(fromto)
                 continue
-            hook = self.instance(hklass, self.session,
+            hook = self.instance(hklass, self.cnx,
                                  event=event,
                                  rtype=rtype,
                                  eidfrom=entity.eid,
@@ -164,7 +161,7 @@ class HooksRunner(object):
                 key = key_data(hklass.__regid__, event)
                 self.deferred_relation_hooks[key][rtype].append(fromto)
                 continue
-            hook = self.instance(hklass, self.session,
+            hook = self.instance(hklass, self.cnx,
                                  event=event,
                                  rtype=rtype,
                                  eidfrom=relation[0].eid,
@@ -174,7 +171,7 @@ class HooksRunner(object):
 
     def pruned_entity_hooks(self, event, entity):
         cache_key = (event, entity.cw_etype)
-        pruned = self.session.pruned_hooks_cache.get(cache_key)
+        pruned = self.cnx.pruned_hooks_cache.get(cache_key)
         if pruned is not None:
             return pruned
 
@@ -182,15 +179,15 @@ class HooksRunner(object):
         for hook in self._iterhooks(event):
             _enabled_cat, main_predicate = hook.filterable_selectors()
             if main_predicate is not None:
-                if not main_predicate(hook, self.session, entity=entity):
+                if not main_predicate(hook, self.cnx, entity=entity):
                     pruned.add(hook)
 
-        self.session.pruned_hooks_cache[cache_key] = pruned
+        self.cnx.pruned_hooks_cache[cache_key] = pruned
         return pruned
 
     def pruned_inlinedrtype_hooks(self, event, entity, rtype):
         cache_key = (event, entity.cw_etype, rtype)
-        pruned = self.session.pruned_hooks_cache.get(cache_key)
+        pruned = self.cnx.pruned_hooks_cache.get(cache_key)
         if pruned is not None:
             return pruned
 
@@ -198,17 +195,17 @@ class HooksRunner(object):
         for hook in self._iterhooks(event):
             _enabled_cat, main_predicate = hook.filterable_selectors()
             if main_predicate is not None:
-                if not main_predicate(hook, self.session,
+                if not main_predicate(hook, self.cnx,
                                       eidfrom=entity.eid,
                                       eidto=entity.cw_attr_cache[rtype]):
                     pruned.add(hook)
 
-        self.session.pruned_hooks_cache[cache_key] = pruned
+        self.cnx.pruned_hooks_cache[cache_key] = pruned
         return pruned
 
     def pruned_relations_hooks(self, event, rtype, relation):
         cache_key = (event, rtype)
-        pruned = self.session.pruned_hooks_cache.get(cache_key)
+        pruned = self.cnx.pruned_hooks_cache.get(cache_key)
         if pruned is not None:
             return pruned
 
@@ -216,12 +213,12 @@ class HooksRunner(object):
         for hook in self._iterhooks(event):
             _enabled_cat, main_predicate = hook.filterable_selectors()
             if main_predicate is not None:
-                if not main_predicate(hook, self.session,
+                if not main_predicate(hook, self.cnx,
                                       eidfrom=relation[0].eid,
                                       eidto=relation[1].eid):
                     pruned.add(hook)
 
-        self.session.pruned_hooks_cache[cache_key] = pruned
+        self.cnx.pruned_hooks_cache[cache_key] = pruned
         return pruned
 
     def call_rtype_hooks(self, event, rtype, relations):
@@ -229,7 +226,7 @@ class HooksRunner(object):
         assert event in RELATIONS_EVENTS
         shown = not server.DEBUG & server.DBG_HOOKS
         self.logger.info('call rtypes hooks %s', event)
-        with self.session.security_enabled(read=False):
+        with self.cnx.security_enabled(read=False):
             for relation in relations:
                 hooks = list(self.iterrelationhooks(event, rtype, relation))
                 if not shown and hooks:
@@ -238,13 +235,13 @@ class HooksRunner(object):
                     shown = True
                 if not hooks:
                     continue
-                with self.session.security_enabled(write=False):
+                with self.cnx.security_enabled(write=False):
                     for hook in hooks:
                         hook()
 
     def call_etype_hooks(self, event, etype, entities, inlinedrtypes):
         """ execute selectable hooks for entities and inlined relations """
-        with self.session.security_enabled(read=False):
+        with self.cnx.security_enabled(read=False):
             eevent = event + '_entity'
             assert eevent in ENTITIES_EVENTS
             self.logger.info('call entity hooks %s', eevent)
@@ -258,7 +255,7 @@ class HooksRunner(object):
                     shown = True
                 if not hooks:
                     continue
-                with self.session.security_enabled(write=False):
+                with self.cnx.security_enabled(write=False):
                     for hook in hooks:
                         hook()
 
@@ -276,13 +273,13 @@ class HooksRunner(object):
                         shown = True
                     if not hooks:
                         continue
-                    with self.session.security_enabled(write=False):
+                    with self.cnx.security_enabled(write=False):
                         for hook in hooks:
                             hook()
 
             # entities fti is handled directly by the source
             # hence we cheat a bit by pretending it's the business of a pseudo-hook
-            source = self.session.repo.system_source
+            source = self.cnx.repo.system_source
             if source.do_fti and source.need_fti_indexation(etype):
                 key = key_data('__pseudo_entity_fti__', event)
                 for entity in entities:

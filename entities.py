@@ -24,7 +24,6 @@ from logging import getLogger
 from cPickle import dumps, loads
 
 from cubicweb import neg_role, validation_error, Binary, ValidationError
-from cubicweb.__pkginfo__ import numversion
 from cubicweb.rset import ResultSet
 from cubicweb.schema import RQLConstraint
 from cubicweb import server
@@ -36,9 +35,6 @@ from cubicweb.hooks.integrity import DONT_CHECK_RTYPES_ON_ADD
 from cubes.worker.entities import Performer
 
 from cubes.fastimport.hooks import HooksRunner
-from cubes.fastimport import utils # monkeypatch the native source
-
-notcw319 = numversion[:2] < (3, 19)
 
 
 YAMS_TO_PY_TYPEMAP = defaultdict(
@@ -49,12 +45,12 @@ YAMS_TO_PY_TYPEMAP = defaultdict(
         'String': unicode
     })
 
-def _insertmany(session, table, attributes, prefix=''):
+def _insertmany(cnx, table, attributes, prefix=''):
     """ Low-level INSERT many entities of the same etype
     at once
     """
     # the low-level python-dbapi cursor
-    cursor = session.cnxset['system']
+    cursor = cnx.cnxset.cu
     columns = sorted(attributes[0])
     cursor.executemany('INSERT INTO %s (%s) VALUES (%s)' % (
         prefix + table,                                    # table name
@@ -95,14 +91,14 @@ def _iter_attr_default(eschema, utcnow):
         default = _default_value(rdef, utcnow) if rschema.final else None
         yield rschema.type, default
 
-# variant of session._update_entity_rel_cache_add that gets
+# variant of cnx._update_entity_rel_cache_add that gets
 # the entities
-def _update_entity_rel_cache_add(session, entity, rtype, role, targetentity, otherside=False):
+def _update_entity_rel_cache_add(cnx, entity, rtype, role, targetentity, otherside=False):
     rcache = entity.cw_relation_cached(rtype, role)
     if rcache is None:
         rset = ResultSet([[targetentity.eid]], 'Any X WHERE X eid %s' % targetentity.eid,
                          description=[[targetentity.cw_etype]])
-        rset.req = session
+        rset.req = cnx
         entities = []
     else:
         rset, entities = rcache
@@ -120,25 +116,17 @@ def _update_entity_rel_cache_add(session, entity, rtype, role, targetentity, oth
     entities.append(targetentity)
     entity._cw_related_cache['%s_%s' % (rtype, role)] = (rset, tuple(entities))
     if not otherside:
-        _update_entity_rel_cache_add(session, targetentity, rtype, neg_role(role), entity, True)
+        _update_entity_rel_cache_add(cnx, targetentity, rtype, neg_role(role), entity, True)
 
 
-if notcw319:
-    def reserve_eids(session, qty):
-        """ not fast enough (yet) """
-        source = session.repo.system_source
-        if qty == 1:
-            return (source.create_eid(session),)
-        return source.create_eid(session, count=qty)
-else:
-    def reserve_eids(cnx, qty):
-        source = cnx.repo.system_source
-        if qty == 1:
-            yield source.create_eid(cnx)
-        lasteid = source.create_eid(cnx, count=qty)
-        start = lasteid - qty + 1
-        for eid in xrange(start, lasteid + 1):
-            yield eid
+def reserve_eids(cnx, qty):
+    source = cnx.repo.system_source
+    if qty == 1:
+        yield source.create_eid(cnx)
+    lasteid = source.create_eid(cnx, count=qty)
+    start = lasteid - qty + 1
+    for eid in xrange(start, lasteid + 1):
+        yield eid
 
 
 class FlushController(object):
@@ -157,17 +145,16 @@ class FlushController(object):
     # debatable option
     handle_cw_source_relation = True
 
-    def __init__(self, session,
+    def __init__(self, cnx,
                  disabled_regids=(),
                  deferred_entity_hooks=(),
                  deferred_relation_hooks=()):
-        self.session = session
-        if not notcw319:
-            self.session.mode = 'write'
-        self.schema = session.vreg.schema
+        self.cnx = cnx
+        cnx.mode = 'write'
+        self.schema = cnx.vreg.schema
         self.logger = getLogger(self.loggername)
         self.hooksrunner = self.hooksrunnerclass(self.logger,
-                                                 session,
+                                                 cnx,
                                                  disabled_regids,
                                                  (deferred_entity_hooks +
                                                   self.vectorized_entity_hooks +
@@ -177,16 +164,16 @@ class FlushController(object):
                                                   self.deferred_relation_hooks))
 
     def insert_relations(self, rtype, fromto):
-        session = self.session
+        cnx = self.cnx
         self.hooksrunner.call_rtype_hooks('before_add', rtype, fromto)
 
-        _insertmany(session, rtype + '_relation',
+        _insertmany(cnx, rtype + '_relation',
                     [{'eid_from': fromentity.eid, 'eid_to': toentity.eid}
                      for fromentity, toentity in fromto])
 
         # is the timing of this thing right ? wouldn't earlier be better ?
         for subjentity, objentity in fromto:
-            _update_entity_rel_cache_add(session, subjentity, rtype, 'subject', objentity)
+            _update_entity_rel_cache_add(cnx, subjentity, rtype, 'subject', objentity)
 
         self.hooksrunner.call_rtype_hooks('after_add', rtype, fromto)
 
@@ -195,9 +182,9 @@ class FlushController(object):
                         processattributes=None):
 
         eschema = self.schema[etype]
-        etypeclass = self.session.vreg['etypes'].etype_class(etype)
-        etypeid = eschema_eid(self.session, eschema)
-        ancestorseid = [etypeid] + [eschema_eid(self.session, aschema)
+        etypeclass = self.cnx.vreg['etypes'].etype_class(etype)
+        etypeid = eschema_eid(self.cnx, eschema)
+        ancestorseid = [etypeid] + [eschema_eid(self.cnx, aschema)
                                     for aschema in eschema.ancestors()]
 
         allkeys = set()
@@ -211,7 +198,7 @@ class FlushController(object):
 
         system_source_eid = None
         if self.handle_cw_source_relation:
-            system_source_eid = self.session.execute('CWSource S WHERE S name "system"').rows[0][0]
+            system_source_eid = self.cnx.repo.system_source.eid
 
         entities = []
         bytesrtypes = set(rschema.type
@@ -220,7 +207,7 @@ class FlushController(object):
 
         utcnow = datetime.utcnow()
 
-        eidsequence = reserve_eids(self.session, len(entitiesdicts))
+        eidsequence = reserve_eids(self.cnx, len(entitiesdicts))
         for attrs_and_callbackdata, eid in izip(entitiesdicts, eidsequence):
 
             insertattrs = attrs_and_callbackdata[0]
@@ -240,8 +227,6 @@ class FlushController(object):
 
             # prepare metadata tables
             meta = {'type': etype, 'eid': eid, 'asource': 'system'}
-            if notcw319:
-                meta.update({'mtime': utcnow, 'source': 'system'})
             metadata.append(meta)
             isrelation.append({'eid_from': eid, 'eid_to': etypeid})
             for ancestor in ancestorseid:
@@ -251,12 +236,12 @@ class FlushController(object):
                 cw_source.append({'eid_from': eid, 'eid_to': system_source_eid})
 
             # create an entity
-            entity = etypeclass(self.session)
+            entity = etypeclass(self.cnx)
             entity.eid = eid
             entity.cw_attr_cache = insertattrs
             entity.cw_edited = EditedEntity(entity, **insertattrs)
 
-            self.session.set_entity_cache(entity)
+            self.cnx.set_entity_cache(entity)
 
             entities.append(entity)
 
@@ -268,12 +253,9 @@ class FlushController(object):
                     attr[rtype] = default
 
         # update the repo.eid_type_source cache
-        repo = self.session.repo
+        repo = self.cnx.repo
         for entity in entities:
-            if notcw319:
-                repo._type_source_cache[entity.eid] = entity.cw_etype, 'system', None, 'system'
-            else:
-                repo._type_source_cache[entity.eid] = entity.cw_etype, None, 'system'
+            repo._type_source_cache[entity.eid] = entity.cw_etype, None, 'system'
         inlinedrtypes = set(rschema.type
                             for rschema in eschema.subject_relations()
                             if rschema.inlined)
@@ -295,13 +277,13 @@ class FlushController(object):
                     binaries.append(binary)
 
         # insert entities
-        _insertmany(self.session, etype, attributes, prefix='cw_')
+        _insertmany(self.cnx, etype, attributes, prefix='cw_')
         # insert metadata
-        _insertmany(self.session, 'entities', metadata)
-        _insertmany(self.session, 'is_relation', isrelation)
-        _insertmany(self.session, 'is_instance_of_relation', isinstanceof)
+        _insertmany(self.cnx, 'entities', metadata)
+        _insertmany(self.cnx, 'is_relation', isrelation)
+        _insertmany(self.cnx, 'is_instance_of_relation', isinstanceof)
         if cw_source:
-            _insertmany(self.session, 'cw_source_relation', cw_source)
+            _insertmany(self.cnx, 'cw_source_relation', cw_source)
 
         if bytesrtypes:
             # wipe the buffer, restore the Binary object
@@ -316,7 +298,7 @@ class FlushController(object):
         self.hooksrunner.call_etype_hooks('after_add', etype, entities, irtypes)
 
         # setowner hook
-        user = self.session.user
+        user = self.cnx.user
         fromto = tuple((entity, user) for entity in entities)
         self.insert_relations('owned_by', fromto)
         self.insert_relations('created_by', fromto)
@@ -332,8 +314,8 @@ class FlushController(object):
         This must be called explicitly before the end of the transaction.
         """
         self.logger.info('running vectorized hooks')
-        session = self.session
-        schema = session.vreg.schema
+        cnx = self.cnx
+        schema = cnx.vreg.schema
         # we either run a 'vectorized' version of these or
         # we get a fresh session^Wtransaction to run this stuff
         # in the context of a worker task
@@ -343,7 +325,7 @@ class FlushController(object):
 
         # Handle vectorized hooks
         # entity hooks
-        _ = self.session._
+        _ = self.cnx._
         for regid, entities_by_etype in self.hooksrunner.deferred_entity_hooks.iteritems():
 
             self.logger.info('checking inlined deferred hooks %s (for %s etypes)',
@@ -396,7 +378,7 @@ class FlushController(object):
                             continue
                         for constraint in eschema.rdef(rtype).constraints:
                             if isinstance(constraint, RQLConstraint):
-                                if not check_attribute_repo_constraint(session, self.logger,
+                                if not check_attribute_repo_constraint(cnx, self.logger,
                                                                        entities, constraint):
                                     for entity in entities:
                                         signalerror(etype, entity.eid, rtype, 'subject')
@@ -433,14 +415,14 @@ class FlushController(object):
                 for rtype, fromto in relations.iteritems():
                     done = 0
                     for eidfrom, eidto in fromto:
-                        rdef = session.rtype_eids_rdef(rtype, eidfrom, eidto)
+                        rdef = cnx.rtype_eids_rdef(rtype, eidfrom, eidto)
                         constraints = rdef.constraints
                         if constraints:
                             for constraint in constraints:
                                 if constraint.expression in known_rql_constraints:
                                     continue
                                 try:
-                                    constraint.repo_check(session, eidfrom, rtype, eidto)
+                                    constraint.repo_check(cnx, eidfrom, rtype, eidto)
                                 except ValidationError as err:
                                     errors.append({rtype: str(err)})
                                 done += 1
@@ -455,11 +437,11 @@ class FlushController(object):
         if deferred_entity_hooks or deferred_relation_hooks:
             self.logger.info('saving info for %s entity hooks', len(deferred_entity_hooks))
             self.logger.info('saving info for %s relation hooks', len(deferred_relation_hooks))
-            with session.deny_all_hooks_but('metadata', 'workflow'):
-                task = session.create_entity('CWWorkerTask',
-                                             operation=u'run-deferred-hooks',
-                                             deferred_hooks=Binary(dumps((deferred_entity_hooks,
-                                                                          deferred_relation_hooks))))
+            with cnx.deny_all_hooks_but('metadata', 'workflow'):
+                task = cnx.create_entity('CWWorkerTask',
+                                         operation=u'run-deferred-hooks',
+                                         deferred_hooks=Binary(dumps((deferred_entity_hooks,
+                                                                      deferred_relation_hooks))))
                 self.logger.info('scheduling task %s to run deferrd hooks', task.eid)
         self.logger.info('/running vectorized hooks')
 
@@ -480,24 +462,24 @@ def contiguousboundaries(intseq):
             last = num
     yield low, last
 
-def check_attribute_repo_constraint(session, logger, entities, constraint):
+def check_attribute_repo_constraint(cnx, logger, entities, constraint):
     eidboundaries = contiguousboundaries([e.eid for e in entities])
     for mineid, maxeid in eidboundaries:
-        if not _check_attribute_repo_constraint(session, logger, mineid, maxeid, constraint):
+        if not _check_attribute_repo_constraint(cnx, logger, mineid, maxeid, constraint):
             return False
     return True
 
-def _check_attribute_repo_constraint(session, logger, mineid, maxeid, constraint):
+def _check_attribute_repo_constraint(cnx, logger, mineid, maxeid, constraint):
     expression = 'S eid > %(mineid)s, S eid < %(maxeid)s, ' + constraint.expression
     args = {'mineid': mineid - 1, 'maxeid': maxeid + 1}
     if 'U' in constraint.rqlst.defined_vars:
         expression = 'U eid %(u)s, ' + expression
-        args['u'] = session.user.eid
+        args['u'] = cnx.user.eid
     rql = 'Any %s WHERE %s' % (','.join(sorted(constraint.mainvars)), expression)
     if constraint.distinct_query:
         rql = 'DISTINCT ' + rql
     logger.info('constraint execution: %s (args: %s)', rql, args)
-    rset = session.execute(rql, args, build_descr=False)
+    rset = cnx.execute(rql, args, build_descr=False)
     return rset.rowcount == (maxeid - mineid) + 1
 
 
@@ -506,35 +488,35 @@ def _check_attribute_repo_constraint(session, logger, mineid, maxeid, constraint
 @contextmanager
 def newsession(self, user):
     session = Session(user, self.repo)
-    session.set_cnxset()
-    user = session.entity_from_eid(user.eid)
     try:
         yield session
     finally:
         session.close()
 
+
 class DeferredHooksRunner(Performer):
     __regid__ = 'run-deferred-hooks'
 
-    def abort_task(self, session, task, error):
+    def abort_task(self, cnx, task, error):
         pass
 
-    def perform_task(self, session, task):
+    def perform_task(self, cnx, task):
         user = task.created_by[0]
-        with newsession(session, user) as session:
-            entity_hooks, relation_hooks = loads(task.deferred_hooks.getvalue())
-            try:
-                self.process_entities_hooks(entity_hooks)
-            except ValidationError, verr:
-                self.exception(verr)
-                self.abort_task(session, task, verr)
-            try:
-                self.process_relations_hooks(relation_hooks)
-            except ValidationError, verr:
-                self.exception(verr)
-                self.abort_task(session, task, verr)
-            session.commit()
-            return session._('Success')
+        with newsession(cnx, user) as session:
+            with session.new_cnx() as cnx:
+                entity_hooks, relation_hooks = loads(task.deferred_hooks.getvalue())
+                try:
+                    self.process_entities_hooks(entity_hooks)
+                except ValidationError, verr:
+                    cnx.exception(verr)
+                    self.abort_task(cnx, task, verr)
+                try:
+                    self.process_relations_hooks(relation_hooks)
+                except ValidationError, verr:
+                    cnx.exception(verr)
+                    self.abort_task(cnx, task, verr)
+                cnx.commit()
+                return cnx._('Success')
 
     def _fetch_hook(self, hookregid, hooktype=None):
         assert hooktype in ('entity', 'relation')
@@ -544,21 +526,21 @@ class DeferredHooksRunner(Performer):
         return hook, events
 
     def process_entities_hooks(self, entity_hooks):
-        session = self._cw
-        source = session.repo.system_source
+        cnx = self._cw
+        source = cnx.repo.system_source
 
         for hookregid, stuff in entity_hooks:
             for etype, eid_plus_caches in stuff.iteritems():
                 entities = []
-                etypeclass = session.vreg['etypes'].etype_class(etype)
+                etypeclass = cnx.vreg['etypes'].etype_class(etype)
 
                 for eid, cache in eid_plus_caches:
-                    entity = etypeclass(session)
+                    entity = etypeclass(cnx)
                     entity.eid = eid
                     entity.cw_attr_cache = cache
                     entity.cw_edited = EditedEntity(entity, **cache)
 
-                    session.set_entity_cache(entity)
+                    cnx.set_entity_cache(entity)
                     entities.append(entity)
 
                 if hookregid == '__pseudo_entity_fti__':
@@ -566,7 +548,7 @@ class DeferredHooksRunner(Performer):
                         print '%s: fti for %s entities' % (etype, len(eid_plus_caches))
                     for entity in entities:
                         entity.complete(entity.e_schema.indexable_attributes())
-                        source.index_entity(session, entity=entity)
+                        source.index_entity(cnx, entity=entity)
                     continue
 
                 hookclass, events = self._fetch_hook(hookregid, 'entity')
@@ -576,7 +558,7 @@ class DeferredHooksRunner(Performer):
                     assert entity.cw_etype == etype
                     with self._cw.security_enabled(read=False, write=False):
                         for event in events:
-                            hook = hookclass(session, entity=entity, event=event)
+                            hook = hookclass(cnx, entity=entity, event=event)
                             hook()
 
     def process_relations_hooks(self, relation_hooks):
