@@ -10,4 +10,4 @@ class my_email(RelationDefinition):
 class some_bytes(RelationDefinition):
     subject = 'CWUser'
     object = 'Bytes'
-    cardinality = '??'
+    cardinality = '?1'
