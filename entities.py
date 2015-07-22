@@ -316,10 +316,8 @@ class FlushController(object):
                         insertattrs[rtype] = buffer(data.getvalue())
                     binaries.append(binary_or_none)
 
-        # insert entities
-        _insertmany(self.cnx, etype, attributes, prefix='cw_')
-        # insert metadata
         _insertmany(self.cnx, 'entities', metadata)
+        _insertmany(self.cnx, etype, attributes, prefix='cw_')
         _insertmany(self.cnx, 'is_relation', isrelation)
         _insertmany(self.cnx, 'is_instance_of_relation', isinstanceof)
         if cw_source:
