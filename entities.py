@@ -252,7 +252,7 @@ class FlushController(object):
             insertattrs['creation_date'] = utcnow
             insertattrs['modification_date'] = utcnow
             if 'cwuri' not in insertattrs:
-                insertattrs['cwuri'] = u''
+                insertattrs['cwuri'] = unicode(eid)
             insertattrs['eid'] = eid
 
             if processattributes:
