@@ -305,29 +305,31 @@ class DeferredHooksRunner(Performer):
         user = task.created_by[0]
         with newsession(cnx, user) as session:
             with session.new_cnx() as cnx:
-                entity_hooks, relation_hooks = loads(task.deferred_hooks.getvalue())
-                try:
-                    self.process_entities_hooks(entity_hooks)
-                except ValidationError, verr:
-                    cnx.exception(verr)
-                    self.abort_task(cnx, task, verr)
-                try:
-                    self.process_relations_hooks(relation_hooks)
-                except ValidationError, verr:
-                    cnx.exception(verr)
-                    self.abort_task(cnx, task, verr)
-                cnx.commit()
-                return cnx._('Success')
+                with cnx.ensure_cnx_set:
+                    entity_hooks, relation_hooks = loads(task.deferred_hooks.getvalue())
+                    try:
+                        self.process_entities_hooks(cnx, entity_hooks)
+                    except ValidationError, verr:
+                        cnx.rollback()
+                        cnx.exception(verr)
+                        self.abort_task(cnx, task, verr)
+                    try:
+                        self.process_relations_hooks(cnx, relation_hooks)
+                    except ValidationError, verr:
+                        cnx.rollback()
+                        cnx.exception(verr)
+                        self.abort_task(cnx, task, verr)
+                    cnx.commit()
+                    return cnx._('Success')
 
-    def _fetch_hook(self, hookregid, hooktype=None):
+    def _fetch_hook(self, cnx, hookregid, hooktype=None):
         assert hooktype in ('entity', 'relation')
-        hook = self._cw.vreg['%s_hooks' % hookregid.payload][hookregid.real][0]
+        hook = cnx.vreg['%s_hooks' % hookregid.payload][hookregid.real][0]
         events = set(ev for ev in hook.events if hooktype in ev and 'add' in ev)
         assert hookregid.payload in events, hook
         return hook, events
 
-    def process_entities_hooks(self, entity_hooks):
-        cnx = self._cw
+    def process_entities_hooks(self, cnx, entity_hooks):
         source = cnx.repo.system_source
 
         for hookregid, stuff in entity_hooks:
@@ -352,27 +354,25 @@ class DeferredHooksRunner(Performer):
                         source.index_entity(cnx, entity=entity)
                     continue
 
-                hookclass, events = self._fetch_hook(hookregid, 'entity')
+                hookclass, events = self._fetch_hook(cnx, hookregid, 'entity')
                 if server.DEBUG & server.DBG_HOOKS:
                     print 'entity hooks: %s %s (%s)' %(etype, hookregid, len(entities))
                 for entity in entities:
                     assert entity.cw_etype == etype
-                    with self._cw.security_enabled(read=False, write=False):
+                    with cnx.security_enabled(read=False, write=False):
                         for event in events:
                             hook = hookclass(cnx, entity=entity, event=event)
                             hook()
 
-    def process_relations_hooks(self, relation_hooks):
-        session = self._cw
-
+    def process_relations_hooks(self, cnx, relation_hooks):
         for hookregid, fromto_by_rtype in relation_hooks:
-            hookclass, events = self._fetch_hook(hookregid, 'relation')
+            hookclass, events = self._fetch_hook(cnx, hookregid, 'relation')
             for rtype, fromto in fromto_by_rtype.iteritems():
                 if server.DEBUG & server.DBG_HOOKS:
                     print 'relation hooks: %s %s (%s)' % (type, hookregid, len(fromto))
-                with session.security_enabled(read=False, write=False):
+                with cnx.security_enabled(read=False, write=False):
                     for eidfrom, eidto in fromto:
                         for event in events:
-                            hook = hookclass(session, event=event, rtype=rtype,
+                            hook = hookclass(cnx, event=event, rtype=rtype,
                                              eidfrom=eidfrom, eidto=eidto)
                             hook()
