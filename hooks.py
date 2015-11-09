@@ -294,6 +294,21 @@ def newsession(self, user):
     finally:
         session.close()
 
+@contextmanager
+def try_user_cnx(self, task):
+    """ Try to yiel a Connection loged in as the task creator
+    else default to internal connection.
+    """
+    try:
+        user = task.created_by[0]
+    except IndexError:
+        with self.repo.internal_cnx() as cnx:
+            yield cnx
+    else:
+        with newsession(self, user) as session:
+            with session.new_cnx() as cnx:
+                yield cnx
+
 
 class DeferredHooksRunner(Performer):
     __regid__ = 'run-deferred-hooks'
@@ -302,25 +317,23 @@ class DeferredHooksRunner(Performer):
         pass
 
     def perform_task(self, cnx, task):
-        user = task.created_by[0]
-        with newsession(cnx, user) as session:
-            with session.new_cnx() as cnx:
-                with cnx.ensure_cnx_set:
-                    entity_hooks, relation_hooks = loads(task.deferred_hooks.getvalue())
-                    try:
-                        self.process_entities_hooks(cnx, entity_hooks)
-                    except ValidationError, verr:
-                        cnx.rollback()
-                        cnx.exception(verr)
-                        self.abort_task(cnx, task, verr)
-                    try:
-                        self.process_relations_hooks(cnx, relation_hooks)
-                    except ValidationError, verr:
-                        cnx.rollback()
-                        cnx.exception(verr)
-                        self.abort_task(cnx, task, verr)
-                    cnx.commit()
-                    return cnx._('Success')
+        with try_user_cnx(cnx, task) as cnx:
+            with cnx.ensure_cnx_set:
+                entity_hooks, relation_hooks = loads(task.deferred_hooks.getvalue())
+                try:
+                    self.process_entities_hooks(cnx, entity_hooks)
+                except ValidationError, verr:
+                    cnx.rollback()
+                    cnx.exception(verr)
+                    self.abort_task(cnx, task, verr)
+                try:
+                    self.process_relations_hooks(cnx, relation_hooks)
+                except ValidationError, verr:
+                    cnx.rollback()
+                    cnx.exception(verr)
+                    self.abort_task(cnx, task, verr)
+                cnx.commit()
+                return cnx._('Success')
 
     def _fetch_hook(self, cnx, hookregid, hooktype=None):
         assert hooktype in ('entity', 'relation')

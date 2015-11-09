@@ -334,17 +334,20 @@ class FlushController(object):
                 processentity(entity, *callbackdata)
 
         user = self.cnx.user
+        is_internal = user.login == '__internal_manager__'
         if runhooks:
             self.hooksrunner.call_etype_hooks('after_add', etype, entities, irtypes)
 
             # setowner hook
-            fromto = tuple((entity, user) for entity in entities)
-            self.insert_relations('owned_by', fromto, _update_relcache=False)
-            self.insert_relations('created_by', fromto, _update_relcache=False)
+            if not is_internal:
+                fromto = tuple((entity, user) for entity in entities)
+                self.insert_relations('owned_by', fromto, _update_relcache=False)
+                self.insert_relations('created_by', fromto, _update_relcache=False)
 
         # avoid an excessive memory consumption: the user is never cleared by
         # cnx.commit() or cnx.clear()
-        user._cw_related_cache.clear()
+        if not is_internal:
+            user._cw_related_cache.clear()
 
         return entities
 
