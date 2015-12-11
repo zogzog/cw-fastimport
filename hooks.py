@@ -194,6 +194,7 @@ class HooksRunner(object):
             _enabled_cat, main_predicate = hook.filterable_selectors()
             if main_predicate is not None:
                 if not main_predicate(hook, self.cnx,
+                                      rtype=rtype,
                                       eidfrom=entity.eid,
                                       eidto=entity.cw_attr_cache[rtype]):
                     pruned.add(hook)
@@ -212,6 +213,7 @@ class HooksRunner(object):
             _enabled_cat, main_predicate = hook.filterable_selectors()
             if main_predicate is not None:
                 if not main_predicate(hook, self.cnx,
+                                      rtype=rtype,
                                       eidfrom=relation[0].eid,
                                       eidto=relation[1].eid):
                     pruned.add(hook)

@@ -135,6 +135,22 @@ class DefaultTC(FastImportTC):
         self.assertIsNone(cnx.data.get('BABAR_WAS_THERE'))
         self.assertIsNone(cnx.data.get('CELESTE_WAS_THERE'))
 
+        self.assertEqual([(u'auc', u'staff'),
+                          (u'auc', u'users'),
+                          (u'bedos', 'humorists'),
+                          (u'bedos', u'users'),
+                          (u'dtomanos', u'staff'),
+                          (u'dtomanos', u'users'),
+                          (u'gadelmaleh', 'humorists'),
+                          (u'gadelmaleh', u'users')],
+                         sorted(cnx.data.get('IN_GROUP')))
+
+        self.assertEqual([(u'auc', u'aurelien.campeas@gmail.com'),
+                          (u'bedos', u'guy@bed.os'),
+                          (u'dtomanos', u'dimitri@tomanos.info'),
+                          (u'gadelmaleh', u'gad@elmaleh.com')],
+                         sorted(cnx.data.get('MY_EMAIL')))
+
         # let the deferred-hooks task run
         run_all_tasks(cnx)
         cnx.commit()
