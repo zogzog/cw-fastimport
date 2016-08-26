@@ -21,6 +21,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from cPickle import loads
 
+from logilab.common.deprecation import deprecated
 from cubicweb import server, ValidationError
 from cubicweb.server.session import Session
 from cubicweb.server.hook import (ENTITIES_HOOKS as ENTITIES_EVENTS,
@@ -289,14 +290,13 @@ class HooksRunner(object):
 
 
 @contextmanager
+@deprecated('Use cubicweb.server.session.Session() instead')
 def newsession(self, user):
-    session = Session(user, self.repo)
-    try:
-        yield session
-    finally:
-        session.close()
+    yield Session(user, self.repo)
+
 
 @contextmanager
+@deprecated('Use cubicweb.server.session.Session(user, repo).new_cnx() instead')
 def try_user_cnx(self, task):
     """ Try to yiel a Connection loged in as the task creator
     else default to internal connection.
@@ -307,9 +307,9 @@ def try_user_cnx(self, task):
         with self.repo.internal_cnx() as cnx:
             yield cnx
     else:
-        with newsession(self, user) as session:
-            with session.new_cnx() as cnx:
-                yield cnx
+        session = Session(user, self.repo)
+        with session.new_cnx() as cnx:
+            yield cnx
 
 
 class DeferredHooksRunner(Performer):
