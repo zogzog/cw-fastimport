@@ -46,10 +46,9 @@ from cubicweb.devtools import testlib
 from cubes.worker.testutils import run_all_tasks
 
 from cubes.fastimport.entities import FlushController as FC
-from cubes.fastimport.testutils import FastImportTC
 
 
-class DefaultTC(FastImportTC):
+class DefaultTC(testlib.CubicWebTC):
 
     def test_boundaries(self):
         from cubes.fastimport.entities import contiguousboundaries
