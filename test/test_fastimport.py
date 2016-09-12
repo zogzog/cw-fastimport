@@ -39,6 +39,7 @@ uncomment code below if you want to activate automatic test for your cube:
 
 import os.path as osp
 import csv
+import unittest
 from functools import partial
 
 from cubicweb.devtools import testlib
@@ -48,13 +49,16 @@ from cubes.worker.testutils import run_all_tasks
 from cubes.fastimport.entities import FlushController as FC
 
 
-class DefaultTC(testlib.CubicWebTC):
+class FastImportTC(unittest.TestCase):
 
     def test_boundaries(self):
         from cubes.fastimport.entities import contiguousboundaries
         r = [1, 2, 3, 4, 7, 55, 56, 57, 98, 99]
         self.assertEqual([(1, 4), (7, 7), (55, 57), (98, 99)],
                          list(contiguousboundaries(r)))
+
+
+class CWFastImportTC(testlib.CubicWebTC):
 
     def test_an_import(self):
         with self.admin_access.repo_cnx() as cnx:
