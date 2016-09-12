@@ -17,7 +17,7 @@
 
 """cubicweb-fastimport entity's classes"""
 from collections import defaultdict
-from itertools import izip
+from itertools import izip, count
 from datetime import datetime
 from logging import getLogger
 from cPickle import dumps
@@ -215,7 +215,8 @@ class FlushController(object):
 
     def insert_entities(self, etype, entitiesdicts,
                         processentity=None,
-                        processattributes=None):
+                        processattributes=None,
+                        _store=False):
 
         eschema = self.schema[etype]
         etypeclass = self.cnx.vreg['etypes'].etype_class(etype)
@@ -243,7 +244,10 @@ class FlushController(object):
 
         utcnow = datetime.utcnow()
 
-        eidsequence = reserve_eids(self.cnx, len(entitiesdicts))
+        if _store:
+            eidsequence = count(0, -1)
+        else:
+            eidsequence = reserve_eids(self.cnx, len(entitiesdicts))
         for attrs_and_callbackdata, eid in izip(entitiesdicts, eidsequence):
 
             insertattrs = attrs_and_callbackdata[0]
@@ -253,7 +257,12 @@ class FlushController(object):
             insertattrs['modification_date'] = utcnow
             if 'cwuri' not in insertattrs:
                 insertattrs['cwuri'] = unicode(eid)
-            insertattrs['eid'] = eid
+
+            if 'eid' not in insertattrs:
+                insertattrs['eid'] = eid
+            else:
+                assert _store
+                eid = insertattrs['eid']
 
             if processattributes:
                 processattributes(insertattrs, attrs_and_callbackdata[1])
