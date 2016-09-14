@@ -10,7 +10,8 @@ Package: cubicweb-fastimport
 Architecture: all
 Depends:
  cubicweb-common (>= 3.19.0),
- cubicweb-worker (>= 3.0.3),
+ cubicweb-celery (>= 0.1.0),
+ cubicweb-celerytask (>= 0.1.0)
  ${python:Depends},
  ${misc:Depends},
 Description: Faster-than-baseline entities and relation insertions

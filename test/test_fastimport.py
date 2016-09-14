@@ -44,9 +44,8 @@ from functools import partial
 
 from cubicweb.devtools import testlib
 
-from cubes.worker.testutils import run_all_tasks
-
 from cubes.fastimport.entities import FlushController as FC
+from cubes.celerytask.entities import run_all_tasks
 
 
 class FastImportTC(unittest.TestCase):
@@ -59,6 +58,11 @@ class FastImportTC(unittest.TestCase):
 
 
 class CWFastImportTC(testlib.CubicWebTC):
+
+    def setUp(self):
+        super(CWFastImportTC, self).setUp()
+        from cubicweb_celery import app, init_repo
+        app.cwrepo = init_repo(app.cwconfig)
 
     def test_an_import(self):
         with self.admin_access.repo_cnx() as cnx:
@@ -154,9 +158,9 @@ class CWFastImportTC(testlib.CubicWebTC):
                           (u'gadelmaleh', u'gad@elmaleh.com')],
                          sorted(cnx.data.get('MY_EMAIL')))
 
-        # let the deferred-hooks task run
-        run_all_tasks(cnx)
         cnx.commit()
+        # let the deferred-hooks task run
+        run_all_tasks()
 
         # we should be green
         self.assertEqual(1, cnx.execute('Any X WHERE X has_text "gmail"').rowcount)

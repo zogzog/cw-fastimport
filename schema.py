@@ -16,9 +16,3 @@
 # with this program. If not, see <http://www.gnu.org/licenses/>.
 
 """cubicweb-fastimport schema"""
-
-from yams.buildobjs import RelationDefinition
-
-class deferred_hooks(RelationDefinition):
-    subject = 'CWWorkerTask'
-    object = 'Bytes'

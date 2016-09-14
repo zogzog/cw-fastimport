@@ -17,9 +17,9 @@
 
 """cubicweb-fastimport specific hooks and operations"""
 
+import six
 from collections import defaultdict
 from contextlib import contextmanager
-from cPickle import loads
 
 from logilab.common.deprecation import deprecated
 from cubicweb import server, ValidationError
@@ -29,10 +29,10 @@ from cubicweb.server.hook import (ENTITIES_HOOKS as ENTITIES_EVENTS,
                                   enabled_category)
 from cubicweb.server.session import HOOKS_ALLOW_ALL, HOOKS_DENY_ALL
 from cubicweb.server.edition import EditedEntity
-
-from cubes.worker.entities import Performer
-
+from cubicweb_celery import CWTask
 from cubes.fastimport.utils import transactor, nohook
+
+_ = six.text_type
 
 
 class key_data(object):
@@ -67,6 +67,7 @@ class key_data(object):
     def __str__(self):
         return '<%s with %s>' % (self.real, self.payload)
     __repr__ = __str__
+
 
 
 class HooksRunner(object):
@@ -312,30 +313,25 @@ def try_user_cnx(self, task):
             yield cnx
 
 
-class DeferredHooksRunner(Performer):
-    __regid__ = 'run-deferred-hooks'
+class RunDeferredHooksTask(CWTask):
+    name = 'run-deferred-hooks'
+    need_cnx = True
 
-    def abort_task(self, cnx, task, error):
-        pass
-
-    def perform_task(self, cnx, task):
-        with try_user_cnx(cnx, task) as cnx:
+    def run(self, deferred_hooks, user_eid):
+        with self.cw_user_cnx(user_eid) as cnx:
             with cnx.ensure_cnx_set:
-                entity_hooks, relation_hooks = loads(task.deferred_hooks.getvalue())
+                entity_hooks, relation_hooks = deferred_hooks
                 try:
                     self.process_entities_hooks(cnx, entity_hooks)
                 except ValidationError, verr:
                     cnx.rollback()
                     cnx.exception(verr)
-                    self.abort_task(cnx, task, verr)
                 try:
                     self.process_relations_hooks(cnx, relation_hooks)
                 except ValidationError, verr:
                     cnx.rollback()
                     cnx.exception(verr)
-                    self.abort_task(cnx, task, verr)
                 cnx.commit()
-                return cnx._('Success')
 
     def _fetch_hook(self, cnx, hookregid, hooktype=None):
         assert hooktype in ('entity', 'relation')

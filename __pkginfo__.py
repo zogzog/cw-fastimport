@@ -4,7 +4,7 @@
 modname = 'fastimport'
 distname = 'cubicweb-fastimport'
 
-numversion = (0, 3, 0)
+numversion = (0, 4, 0)
 version = '.'.join(str(num) for num in numversion)
 
 license = 'LGPL'
@@ -15,7 +15,8 @@ web = 'http://www.cubicweb.org/project/%s' % distname
 
 __depends__ = {
     'cubicweb': '>= 3.19.0',
-    'cubicweb-worker': '>= 4.0.0',
+    'cubicweb-celery': '>= 0.1.0',
+    'cubicweb-celerytask': '>= 0.1.0',
 }
 
 classifiers = [

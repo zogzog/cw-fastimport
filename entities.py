@@ -20,7 +20,6 @@ from collections import defaultdict
 from itertools import izip, count
 from datetime import datetime
 from logging import getLogger
-from cPickle import dumps
 
 from cubicweb import neg_role, validation_error, Binary, ValidationError
 from cubicweb.rset import ResultSet
@@ -31,6 +30,7 @@ from cubicweb.hooks.integrity import DONT_CHECK_RTYPES_ON_ADD
 
 from cubes.fastimport.utils import nohook
 from cubes.fastimport.hooks import HooksRunner
+from cubes.celerytask.entities import start_async_task
 
 
 YAMS_TO_PY_TYPEMAP = defaultdict(
@@ -361,7 +361,7 @@ class FlushController(object):
         return entities
 
     def run_deferred_hooks(self, errors):
-        """Run vectorized hooks and pass deferred hooks to a worker task.
+        """Run vectorized hooks and pass deferred hooks to a celery task.
         This must be called explicitly before the end of the transaction.
         """
         self.logger.info('running vectorized hooks')
@@ -371,7 +371,7 @@ class FlushController(object):
         schema = cnx.vreg.schema
         # we either run a 'vectorized' version of these or
         # we get a fresh session^Wtransaction to run this stuff
-        # in the context of a worker task
+        # in the context of a celery task
         vectorized_regids = set(self.vectorized_relation_hooks) | set(self.vectorized_entity_hooks)
         deferred_entity_hooks = []
         deferred_relation_hooks = []
@@ -491,10 +491,9 @@ class FlushController(object):
             self.logger.info('saving info for %s entity hooks', len(deferred_entity_hooks))
             self.logger.info('saving info for %s relation hooks', len(deferred_relation_hooks))
             with cnx.deny_all_hooks_but('metadata', 'workflow'):
-                task = cnx.create_entity('CWWorkerTask',
-                                         operation=u'run-deferred-hooks',
-                                         deferred_hooks=Binary(dumps((deferred_entity_hooks,
-                                                                      deferred_relation_hooks))))
+                task = start_async_task(cnx, 'run-deferred-hooks',
+                                        (deferred_entity_hooks, deferred_relation_hooks),
+                                        cnx.user.eid)
                 self.logger.info('scheduling task %s to run deferrd hooks', task.eid)
         self.logger.info('/running vectorized hooks')
 
