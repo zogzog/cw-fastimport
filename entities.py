@@ -222,7 +222,7 @@ class FlushController(object):
 
         eschema = self.schema[etype]
         etypeclass = self.cnx.vreg['etypes'].etype_class(etype)
-        etypeid = eschema_eid(self.cnx, eschema)
+        etypeid = eschema.eid
         ancestorseid = [etypeid] + [eschema_eid(self.cnx, aschema)
                                     for aschema in eschema.ancestors()]
 
@@ -273,7 +273,7 @@ class FlushController(object):
             allkeys |= set(insertattrs)
 
             # prepare metadata tables
-            meta = {'type': etype, 'eid': eid, 'asource': 'system'}
+            meta = {'type': etype, 'eid': eid}
             metadata.append(meta)
             isrelation.append({'eid_from': eid, 'eid_to': etypeid})
             for ancestor in ancestorseid:
@@ -302,7 +302,8 @@ class FlushController(object):
         # update the repo.eid_type_source cache
         repo = self.cnx.repo
         for entity in entities:
-            repo._type_source_cache[entity.eid] = entity.cw_etype, None, 'system'
+            repo._type_cache[entity.eid] = entity.cw_etype
+
         inlinedrtypes = set(rschema.type
                             for rschema in eschema.subject_relations()
                             if rschema.inlined)
