@@ -16,6 +16,8 @@
 # with this program. If not, see <http://www.gnu.org/licenses/>.
 
 """cubicweb-fastimport entity's classes"""
+import base64
+import pickle
 from collections import defaultdict
 from itertools import izip, count
 from datetime import datetime
@@ -492,7 +494,7 @@ class FlushController(object):
             self.logger.info('saving info for %s relation hooks', len(deferred_relation_hooks))
             with cnx.deny_all_hooks_but('metadata', 'workflow'):
                 task = start_async_task(cnx, 'run-deferred-hooks',
-                                        (deferred_entity_hooks, deferred_relation_hooks),
+                                        base64.b64encode(pickle.dumps((deferred_entity_hooks, deferred_relation_hooks))),
                                         cnx.user.eid)
                 self.logger.info('scheduling task %s to run deferrd hooks', task.eid)
         self.logger.info('/running vectorized hooks')

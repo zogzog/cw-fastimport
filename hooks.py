@@ -18,6 +18,8 @@
 """cubicweb-fastimport specific hooks and operations"""
 
 import six
+import base64
+import pickle
 from collections import defaultdict
 from contextlib import contextmanager
 
@@ -320,7 +322,7 @@ class RunDeferredHooksTask(CWTask):
     def run(self, deferred_hooks, user_eid):
         with self.cw_user_cnx(user_eid) as cnx:
             with cnx.ensure_cnx_set:
-                entity_hooks, relation_hooks = deferred_hooks
+                entity_hooks, relation_hooks = pickle.loads(base64.b64decode(deferred_hooks))
                 try:
                     self.process_entities_hooks(cnx, entity_hooks)
                 except ValidationError, verr:
