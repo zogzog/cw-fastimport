@@ -23,7 +23,7 @@ from itertools import izip, count
 from datetime import datetime
 from logging import getLogger
 
-from cubicweb import neg_role, validation_error, Binary, ValidationError
+from cubicweb import neg_role, validation_error, ValidationError
 from cubicweb.rset import ResultSet
 from cubicweb.schema import RQLConstraint
 from cubicweb.server.edition import EditedEntity
