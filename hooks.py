@@ -102,17 +102,16 @@ class HooksRunner(object):
         tx = transactor(self.cnx)
         if nohook(tx):
             return
-        deny = tx.hooks_mode == HOOKS_DENY_ALL
-        whitelist = tx.enabled_hook_cats
-        allow = tx.hooks_mode == HOOKS_ALLOW_ALL
-        blacklist = tx.disabled_hook_cats
+        deny = tx._hooks_mode == HOOKS_DENY_ALL
+        allow = tx._hooks_mode == HOOKS_ALLOW_ALL
+        hooks_cats = tx._hooks_categories
         for hooks in self.vreg[event + '_hooks'].itervalues():
             for hook in hooks:
                 if hook.__regid__ in self.disabled_regids:
                     continue
-                if deny and hook.category not in whitelist:
+                if deny and hook.category not in hooks_cats:
                     continue
-                if allow and hook.category in blacklist:
+                if allow and hook.category in hooks_cats:
                     continue
                 yield hook
 

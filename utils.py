@@ -10,4 +10,4 @@ def transactor(cnx):
 
 def nohook(tx):
     # no hooks & no whitelist
-    return tx.hooks_mode == HOOKS_DENY_ALL and not tx.enabled_hook_cats
+    return tx._hooks_mode == HOOKS_DENY_ALL and not tx._hooks_categories
