@@ -25,7 +25,6 @@ from contextlib import contextmanager
 
 from logilab.common.deprecation import deprecated
 from cubicweb import server, ValidationError
-from cubicweb.server.session import Session
 from cubicweb.server.hook import (ENTITIES_HOOKS as ENTITIES_EVENTS,
                                   RELATIONS_HOOKS as RELATIONS_EVENTS,
                                   enabled_category)
@@ -290,29 +289,6 @@ class HooksRunner(object):
                     self.deferred_entity_hooks[key][entity.cw_etype].append(entity)
                 if server.DEBUG & server.DBG_HOOKS:
                     print '%s: preparing %s entities for fti' % (etype, len(entities))
-
-
-@contextmanager
-@deprecated('Use cubicweb.server.session.Session() instead')
-def newsession(self, user):
-    yield Session(user, self.repo)
-
-
-@contextmanager
-@deprecated('Use cubicweb.server.session.Session(user, repo).new_cnx() instead')
-def try_user_cnx(self, task):
-    """ Try to yiel a Connection loged in as the task creator
-    else default to internal connection.
-    """
-    try:
-        user = task.created_by[0]
-    except IndexError:
-        with self.repo.internal_cnx() as cnx:
-            yield cnx
-    else:
-        session = Session(user, self.repo)
-        with session.new_cnx() as cnx:
-            yield cnx
 
 
 class RunDeferredHooksTask(CWTask):
