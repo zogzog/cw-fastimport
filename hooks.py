@@ -292,10 +292,9 @@ class HooksRunner(object):
 
 class RunDeferredHooksTask(CWTask):
     name = 'run-deferred-hooks'
-    need_cnx = True
 
     def run(self, deferred_hooks, user_eid):
-        with self.cnx(user) as cnx:
+        with self.cnx(user_eid) as cnx:
             with cnx.ensure_cnx_set:
                 entity_hooks, relation_hooks = pickle.loads(base64.b64decode(deferred_hooks))
                 try:
